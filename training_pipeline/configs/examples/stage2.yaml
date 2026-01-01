@@ -1,0 +1,41 @@
+model:
+  model_path: "/media/vishal/workspace/projects/VLA/f2q_vla_artifacts"
+  type: "f2q_vla"
+  freeze_vision_tower: true
+  freeze_llm: false
+  freeze_projector: false
+
+data:
+  dataset_path: "/media/vishal/datasets/pixmo/metadata_cleaned/"
+  test_split_ratio: 0.01
+  image_size_height: 360
+  image_size_width: 640
+  dataloader_num_workers: 6
+  max_len: 1024
+
+training:
+  output_dir: "/media/vishal/workspace/projects/VLA/checkpoints/testing_new_pipeline"
+  num_train_epochs: 1
+  learning_rate: 3.0e-4
+  weight_decay: 0.01
+  per_device_train_batch_size: 4
+  gradient_accumulation_steps: 32
+  report_to: "tensorboard"
+  save_steps: 500
+  logging_steps: 100
+
+lora:
+  enabled: true
+  r: 128
+  lora_alpha: 256
+  target_modules:
+    - "q_proj"
+    - "k_proj"
+    - "v_proj"
+    - "o_proj"
+    - "gate_proj"
+    - "up_proj"
+    - "down_proj"
+  modules_to_save:
+    - "lm_head"
+    - "embed_tokens"
