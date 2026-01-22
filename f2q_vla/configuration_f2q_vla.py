@@ -1,0 +1,58 @@
+import torch
+from transformers import AutoConfig
+from transformers.configuration_utils import PretrainedConfig
+from transformers import Qwen3Config
+
+
+VISION_MODEL_ID = "kevin510/fast-vit-hd"
+
+
+class F2QVLAConfig(PretrainedConfig):
+    model_type = "f2q_vla"
+    
+    def __init__(
+            self,
+            vision_config=None,
+            text_config=None,
+            projector_hidden_act="gelu",
+            ignore_index=-100,
+            # carried over from qwen3_vl
+            image_token_id=151655,
+            # video_token_id=151656,
+            vision_start_token_id=151652,
+            vision_end_token_id=151653,
+            tie_word_embeddings=True,
+            **kwargs
+    ):
+
+        super().__init__(**kwargs)
+
+        # Initialize sub-configs
+        if vision_config is None:
+            # Load FastViT config from HuggingFace Hub
+            self.vision_config = AutoConfig.from_pretrained(VISION_MODEL_ID, trust_remote_code=True)
+        elif isinstance(vision_config, dict):
+            # Reconstruct from dict
+            self.vision_config = AutoConfig.from_pretrained(VISION_MODEL_ID, trust_remote_code=True, **vision_config)
+        else:
+            self.vision_config = vision_config
+
+        self.vision_config.dtype = torch.bfloat16
+
+        if text_config is None:
+            self.text_config = AutoConfig.from_pretrained("Qwen/Qwen3-0.6B")
+        elif isinstance(text_config, dict):
+            self.text_config = Qwen3Config(**text_config)
+        else:
+            self.text_config = text_config
+
+        self.hidden_size = self.text_config.hidden_size
+        self.vision_hidden_size = self.vision_config.embed_dim  # 3072 for FastViT-HD
+        self.projector_hidden_act = projector_hidden_act
+        self.ignore_index = ignore_index
+        self.vocab_size = self.text_config.vocab_size
+        self.image_token_id = image_token_id
+        self.vision_start_token_id = vision_start_token_id
+        self.vision_end_token_id = vision_end_token_id
+        self.patch_size = self.vision_config.patch_size  # 64 for FastViT-HD
+        super().__init__(**kwargs, tie_word_embeddings=tie_word_embeddings)
