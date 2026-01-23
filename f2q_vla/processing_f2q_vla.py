@@ -25,8 +25,15 @@ class F2QVLAProcessor(ProcessorMixin):
     attributes = ["image_processor", "tokenizer"]
     image_processor_class = "CLIPImageProcessor"
     tokenizer_class = ("Qwen2Tokenizer", "Qwen2TokenizerFast")
+    
+    # Trajectory token constants
+    TRAJ_TOKEN = {
+        "history": "<|traj_history|>",
+        "history_start": "<|traj_history_start|>",
+        "history_end": "<|traj_history_end|>",
+    }
 
-    def __init__(self, image_processor, tokenizer, chat_template, patch_size=64, **kwargs):
+    def __init__(self, image_processor, tokenizer, chat_template, patch_size=64, traj_vocab_size=768, **kwargs):
         super().__init__(image_processor, tokenizer, chat_template=chat_template)
         self.patch_size = patch_size
         self.image_token = "<|image_pad|>" if not hasattr(tokenizer, "image_token") else tokenizer.image_token
@@ -53,6 +60,38 @@ class F2QVLAProcessor(ProcessorMixin):
             if getattr(tokenizer, "vision_end_token_id", None)
             else tokenizer.convert_tokens_to_ids(self.vision_end_token)
         )
+        
+        # Add trajectory tokens to tokenizer
+        self.traj_vocab_size = traj_vocab_size
+        self._add_trajectory_tokens(tokenizer, traj_vocab_size)
+    
+    def _add_trajectory_tokens(self, tokenizer, traj_vocab_size: int):
+        """Add trajectory tokens to the tokenizer.
+        
+        Args:
+            tokenizer: The tokenizer to modify.
+            traj_vocab_size: Number of discrete trajectory tokens to add.
+        """
+        # Add discrete trajectory tokens (<i0> to <i{traj_vocab_size-1}>)
+        discrete_tokens = [f"<i{v}>" for v in range(traj_vocab_size)]
+        num_new_tokens = tokenizer.add_tokens(discrete_tokens)
+        
+        # Store trajectory token indices on tokenizer
+        tokenizer.traj_token_start_idx = tokenizer.convert_tokens_to_ids("<i0>")
+        tokenizer.traj_token_end_idx = tokenizer.convert_tokens_to_ids(f"<i{traj_vocab_size - 1}>")
+        
+        # Add special trajectory tokens
+        special_tokens = list(self.TRAJ_TOKEN.values())
+        tokenizer.add_tokens(special_tokens, special_tokens=True)
+        
+        # Store special token IDs on tokenizer
+        tokenizer.traj_token_ids = {
+            k: tokenizer.convert_tokens_to_ids(v) for k, v in self.TRAJ_TOKEN.items()
+        }
+        
+        # Store on processor for easy access
+        self.traj_token_start_idx = tokenizer.traj_token_start_idx
+        self.traj_token_ids = tokenizer.traj_token_ids
 
     def _calculate_num_image_tokens(self, image_height, image_width):
         """Calculate number of tokens based on image dimensions and patch size.

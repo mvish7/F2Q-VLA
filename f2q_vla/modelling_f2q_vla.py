@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import Optional, Union
+from typing import Optional, Union, Any
 
 import torch
 import torch.nn as nn
@@ -14,6 +14,8 @@ from transformers.processing_utils import Unpack
 from transformers.utils import TransformersKwargs
 from transformers.modeling_outputs import ModelOutput
 from f2q_vla.configuration_f2q_vla import F2QVLAConfig
+from f2q_vla.delta_tokenizer import DeltaTrajectoryTokenizer
+from f2q_vla.traj_utils import TrajectoryFusionMixin
 
 
 VISION_MODEL_ID = "kevin510/fast-vit-hd"
@@ -71,7 +73,7 @@ class F2QVLAPretrainedModel(PreTrainedModel):
     _can_record_outputs = {}
 
 
-class F2QVLAForConditionalGeneration(F2QVLAPretrainedModel, GenerationMixin):
+class F2QVLAForConditionalGeneration(F2QVLAPretrainedModel, GenerationMixin, TrajectoryFusionMixin):
     _checkpoint_conversion_mapping = {}
     _tied_weights_keys = ["lm_head.weight"]
     config_class = F2QVLAConfig
@@ -94,9 +96,29 @@ class F2QVLAForConditionalGeneration(F2QVLAPretrainedModel, GenerationMixin):
 
         # LM head
         self.lm_head = nn.Linear(config.text_config.hidden_size, config.text_config.vocab_size, bias=False)
+        
+        # 4. Initialize trajectory tokenizer for history encoding
+        self._initialize_trajectory_tokenizer(config)
 
-        # 4. Tie weights if necessary (standard HF practice)
+        # 5. Tie weights if necessary (standard HF practice)
         self.post_init()
+    
+    def _initialize_trajectory_tokenizer(self, config):
+        """Initialize trajectory tokenizer for history trajectory encoding."""
+        if config.hist_traj_tokenizer_cfg is not None:
+            # Use custom config if provided
+            self.hist_traj_tokenizer = DeltaTrajectoryTokenizer(**config.hist_traj_tokenizer_cfg)
+        else:
+            # Default configuration (matching alpamayo_r1)
+            self.hist_traj_tokenizer = DeltaTrajectoryTokenizer(
+                ego_xyz_min=(-4, -4, -10),
+                ego_xyz_max=(4, 4, 10),
+                num_bins=1000,
+                predict_yaw=False,
+            )
+        
+        # Set the start index for history trajectory tokens
+        self.hist_token_start_idx = config.traj_token_start_idx if config.traj_token_start_idx else 0
 
     def get_input_embeddings(self):
         return self.language_model.get_input_embeddings()

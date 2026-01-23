@@ -22,6 +22,12 @@ class F2QVLAConfig(PretrainedConfig):
             vision_start_token_id=151652,
             vision_end_token_id=151653,
             tie_word_embeddings=True,
+            # Trajectory encoding config
+            traj_vocab_size: int = 768,
+            tokens_per_history_traj: int = 48,  # 16 waypoints × 3 (xyz)
+            traj_token_start_idx: int = None,  # Set during tokenizer init
+            traj_token_ids: dict = None,  # Mapping for special tokens
+            hist_traj_tokenizer_cfg: dict = None,  # Config for history trajectory tokenizer
             **kwargs
     ):
 
@@ -55,4 +61,13 @@ class F2QVLAConfig(PretrainedConfig):
         self.vision_start_token_id = vision_start_token_id
         self.vision_end_token_id = vision_end_token_id
         self.patch_size = self.vision_config.patch_size  # 64 for FastViT-HD
+        
+        # Trajectory encoding config
+        self.traj_vocab_size = traj_vocab_size
+        self.tokens_per_history_traj = tokens_per_history_traj
+        self.traj_token_start_idx = traj_token_start_idx
+        self.traj_token_ids = traj_token_ids
+        self.hist_traj_tokenizer_cfg = hist_traj_tokenizer_cfg
+        
         super().__init__(**kwargs, tie_word_embeddings=tie_word_embeddings)
+
