@@ -9,6 +9,11 @@ from f2q_vla.traj_utils import (
     replace_pad_token,
     TRAJ_TOKEN,
 )
+from f2q_vla.action_head import ActionChunkingHead, create_action_head
+from f2q_vla.geometry import (
+    compute_rotation_matrix_from_ortho6d,
+    rotation_matrix_to_ortho6d,
+)
 
 __all__ = [
     "F2QVLAConfig",
@@ -22,4 +27,8 @@ __all__ = [
     "tokenize_history_trajectory",
     "replace_pad_token",
     "TRAJ_TOKEN",
+    "ActionChunkingHead",
+    "create_action_head",
+    "compute_rotation_matrix_from_ortho6d",
+    "rotation_matrix_to_ortho6d",
 ]
