@@ -16,6 +16,7 @@ from transformers.modeling_outputs import ModelOutput
 from f2q_vla.configuration_f2q_vla import F2QVLAConfig
 from f2q_vla.delta_tokenizer import DeltaTrajectoryTokenizer
 from f2q_vla.traj_utils import TrajectoryFusionMixin
+from f2q_vla.action_head import ActionChunkingHead
 
 
 VISION_MODEL_ID = "kevin510/fast-vit-hd"
@@ -99,8 +100,11 @@ class F2QVLAForConditionalGeneration(F2QVLAPretrainedModel, GenerationMixin, Tra
         
         # 4. Initialize trajectory tokenizer for history encoding
         self._initialize_trajectory_tokenizer(config)
+        
+        # 5. Initialize action head for future trajectory prediction
+        self._initialize_action_head(config)
 
-        # 5. Tie weights if necessary (standard HF practice)
+        # 6. Tie weights if necessary (standard HF practice)
         self.post_init()
     
     def _initialize_trajectory_tokenizer(self, config):
@@ -119,6 +123,17 @@ class F2QVLAForConditionalGeneration(F2QVLAPretrainedModel, GenerationMixin, Tra
         
         # Set the start index for history trajectory tokens
         self.hist_token_start_idx = config.traj_token_start_idx if config.traj_token_start_idx else 0
+    
+    def _initialize_action_head(self, config):
+        """Initialize action chunking head for future trajectory prediction."""
+        self.action_head = ActionChunkingHead(
+            hidden_size=config.hidden_size,
+            num_queries=config.num_action_queries,
+            num_layers=config.num_action_layers,
+            nhead=config.action_nhead,
+            dim_feedforward=config.action_dim_feedforward,
+            dropout=config.action_dropout,
+        )
 
     def get_input_embeddings(self):
         return self.language_model.get_input_embeddings()
@@ -171,6 +186,8 @@ class F2QVLAForConditionalGeneration(F2QVLAPretrainedModel, GenerationMixin, Tra
         pixel_values: Optional[torch.Tensor] = None,
         cache_position: Optional[torch.LongTensor] = None,
         logits_to_keep: Union[int, torch.Tensor] = 0,
+        output_hidden_states: Optional[bool] = None,
+        output_attentions: Optional[bool] = None,
         **kwargs: Unpack[TransformersKwargs],
     ):
 
@@ -195,7 +212,7 @@ class F2QVLAForConditionalGeneration(F2QVLAPretrainedModel, GenerationMixin, Tra
         else:
             image_embeds = None
 
-        # 3. Pass to LLM
+        # 3. Pass to LLM with output_hidden_states and output_attentions
         outputs = self.language_model(
             input_ids=None,
             position_ids=position_ids,
@@ -203,6 +220,8 @@ class F2QVLAForConditionalGeneration(F2QVLAPretrainedModel, GenerationMixin, Tra
             past_key_values=past_key_values,
             inputs_embeds=inputs_embeds,
             cache_position=cache_position,
+            output_hidden_states=output_hidden_states,
+            output_attentions=output_attentions,
             **kwargs,
         )
 
@@ -220,7 +239,31 @@ class F2QVLAForConditionalGeneration(F2QVLAPretrainedModel, GenerationMixin, Tra
             loss=loss,
             logits=logits,
             past_key_values=outputs.past_key_values,
+            hidden_states=outputs.hidden_states if output_hidden_states else None,
+            attentions=outputs.attentions if output_attentions else None,
         )
+    
+    def predict_future_trajectory(
+        self,
+        vlm_context: torch.Tensor,
+        return_rot_matrix: bool = True,
+    ) -> dict[str, torch.Tensor]:
+        """Predict future trajectory from VLM context.
+        
+        This method takes the hidden state from the VLM (typically at <|traj_future_start|>)
+        and uses the action head to predict future waypoints.
+        
+        Args:
+            vlm_context: VLM hidden states. Shape: [B, S, hidden_size] where S is usually 1.
+            return_rot_matrix: If True, convert 6D rotation to 3x3 matrix.
+            
+        Returns:
+            Dictionary containing:
+                - "xyz": Predicted XYZ positions [B, num_queries, 3]
+                - "rot6d": 6D rotation representation [B, num_queries, 6]
+                - "rot_matrix": (optional) 3x3 rotation matrices [B, num_queries, 3, 3]
+        """
+        return self.action_head(vlm_context, return_rot_matrix=return_rot_matrix)
 
 
 

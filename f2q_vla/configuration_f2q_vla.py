@@ -28,6 +28,12 @@ class F2QVLAConfig(PretrainedConfig):
             traj_token_start_idx: int = None,  # Set during tokenizer init
             traj_token_ids: dict = None,  # Mapping for special tokens
             hist_traj_tokenizer_cfg: dict = None,  # Config for history trajectory tokenizer
+            # Action head config (for future trajectory prediction)
+            num_action_queries: int = 64,  # Number of future waypoints
+            num_action_layers: int = 4,  # Transformer decoder layers
+            action_nhead: int = 16,  # Attention heads
+            action_dim_feedforward: int = 4096,  # FFN dimension
+            action_dropout: float = 0.1,  # Dropout
             **kwargs
     ):
 
@@ -68,6 +74,13 @@ class F2QVLAConfig(PretrainedConfig):
         self.traj_token_start_idx = traj_token_start_idx
         self.traj_token_ids = traj_token_ids
         self.hist_traj_tokenizer_cfg = hist_traj_tokenizer_cfg
+        
+        # Action head config
+        self.num_action_queries = num_action_queries
+        self.num_action_layers = num_action_layers
+        self.action_nhead = action_nhead
+        self.action_dim_feedforward = action_dim_feedforward
+        self.action_dropout = action_dropout
         
         super().__init__(**kwargs, tie_word_embeddings=tie_word_embeddings)
 

@@ -31,6 +31,7 @@ class F2QVLAProcessor(ProcessorMixin):
         "history": "<|traj_history|>",
         "history_start": "<|traj_history_start|>",
         "history_end": "<|traj_history_end|>",
+        "future_start": "<|traj_future_start|>",
     }
 
     def __init__(self, image_processor, tokenizer, chat_template, patch_size=64, traj_vocab_size=768, **kwargs):
