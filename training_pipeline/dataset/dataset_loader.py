@@ -1,7 +1,7 @@
 from datasets import load_from_disk
 from typing import Tuple, Any, Dict
 from ..configs.configs import DataConfig
-from .dataset_formatter import format_data
+from .dataset_formatter import format_data, format_vla_data
 from .data_collator import DataCollator
 
 class DatasetLoader:
@@ -24,10 +24,15 @@ class DatasetLoader:
         test_dataset = dataset_dict["test"].shuffle()
         
         # Format datasets using the formatter
-        # Note: We are mapping format_data which returns a list of dicts (messages)
-        # This transforms the HuggingFace dataset into a list of conversations
-        train_dataset = [format_data(sample) for sample in train_dataset]
-        test_dataset = [format_data(sample) for sample in test_dataset]
+        # We NO LONGER map format_vla_data here because we need the raw sample in the DataCollator
+        # to extract trajectory info. The formatting happens inside DataCollator.
+        
+        # Convert to list of dicts to be compatible with DataCollator expecting list
+        # using select/indices or just iteration.
+        # Since we shuffled, we can just return the dataset object if it implements __getitem__
+        # But DataCollator expects a list.
+        train_dataset = [sample for sample in train_dataset]
+        test_dataset = [sample for sample in test_dataset]
         
         return train_dataset, test_dataset
 

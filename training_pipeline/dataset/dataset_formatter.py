@@ -69,3 +69,70 @@ def format_data(sample: Dict[str, Any], system_message: str = DEFAULT_SYSTEM_MES
             "content": [{"type": "text", "text": assistant_text}],
         },
     ]
+
+# Trajectory tokens (mirrored from f2q_vla/traj_utils.py to avoid circular imports if needed, 
+# or we can import if the package is installed. For safety in this script, defining here.)
+TRAJ_TOKEN = {
+    "history": "<|traj_history|>",
+    "history_start": "<|traj_history_start|>",
+    "history_end": "<|traj_history_end|>",
+}
+
+def format_vla_data(sample: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """Format a VLA sample into a conversation list for F2Q VLA.
+    
+    Includes 4 cameras * 5 timestamps images and trajectory placeholders.
+    """
+    # 1. System Prompt
+    system_msg = "You are a driving assistant that generates safe and accurate actions."
+    
+    # 2. User Prompt Components
+    user_content = []
+    
+    # a. Images directly from image_paths
+    # Parse images: 4 cameras, 5 timestamps each
+    # Order: We follow the order in image_paths iteration (Camera, then Time)
+    if "image_paths" in sample:
+        # sample["image_paths"] is {cam_name: [t1, t2, t3, t4, t5], ...}
+        for cam_name, paths in sample["image_paths"].items():
+            for path in paths:
+                user_content.append({
+                    "type": "image",
+                    "image": path,  # This path is relative or absolute, handled by collator
+                })
+    
+    # b. Trajectory History Placeholder
+    # Default 48 tokens (16 steps * 3 dims)
+    num_traj_tokens = 48 
+    hist_traj_placeholder = (
+        f"{TRAJ_TOKEN['history_start']}"
+        f"{TRAJ_TOKEN['history'] * num_traj_tokens}"
+        f"{TRAJ_TOKEN['history_end']}"
+    )
+    
+    # c. Text Prompt
+    user_text = "output the chain-of-thought reasoning of the driving process, then output the future trajectory."
+    
+    user_content.append({
+        "type": "text",
+        "text": f"{hist_traj_placeholder}{user_text}"
+    })
+
+    # 3. Assistant Target (Reasoning)
+    # We want the model to learn to output: <|cot_start|> reasoning
+    assistant_text = "<|cot_start|> " + sample.get("coc_reasoning", "")
+    
+    return [
+        {
+            "role": "system",
+            "content": [{"type": "text", "text": system_msg}],
+        },
+        {
+            "role": "user",
+            "content": user_content,
+        },
+        {
+            "role": "assistant",
+            "content": [{"type": "text", "text": assistant_text}],
+        },
+    ]
