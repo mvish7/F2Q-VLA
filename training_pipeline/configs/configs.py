@@ -13,6 +13,10 @@ class ModelConfig:
     freeze_vision_tower: bool = True
     freeze_llm: bool = False
     freeze_projector: bool = False
+    freeze_action_head: bool = False
+    
+    # Loss weights
+    loss_weights: dict = field(default_factory=lambda: {"text": 1.0, "xyz": 1.0, "rot": 1.0})
 
 @dataclass
 class DataConfig:
