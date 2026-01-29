@@ -40,44 +40,77 @@ def load_model_and_processor(config) -> Tuple[Any, Any]:
         attn_implementation=config.model.attn_implementation,
         trust_remote_code=False
     )
+
+    # Resize token embeddings to match tokenizer
+    # unique to F2Q VLA: we add trajectory tokens to the tokenizer in the processor
+    # so we must resize the model embeddings to accommodate them
+    model.resize_token_embeddings(len(processor.tokenizer))
     
     return model, processor
 
 def apply_freezing(model, config):
     """Apply freezing strategies based on configuration."""
     
-    # Freeze Vision Tower
+    # 1. Vision Tower
     if config.model.freeze_vision_tower:
-        for name, param in model.named_parameters():
-             if "vision_tower" in name:
-                param.requires_grad = False
-                
-    # Freeze LLM
-    if config.model.freeze_llm:
-        for name, param in model.named_parameters():
-            # Adjust logical check based on model architecture
-            # Usually LLM parts are not vision_tower
-            if "vision_tower" not in name and "projector" not in name:
-                 # Check if it's strictly LLM parameters. 
-                 # For F2Q VLA, assuming language_model or similar containment, or everything else
-                 # If we freeze LLM, we typically freeze everything EXCEPT projector if freeze_projector is False
-                 param.requires_grad = False
+        print("Freezing vision tower...")
+        for param in model.vision_tower.parameters():
+            param.requires_grad = False
     
-    # Freeze Projector
+    # 2. Language Model (LLM)
+    if config.model.freeze_llm:
+        print("Freezing language model...")
+        for param in model.language_model.parameters():
+            param.requires_grad = False
+            
+        # Freezing the LLM usually means freezing the LM head as well, unless specified otherwise
+        # But often we want to train the head if we are fine-tuning. 
+        # For now, let's treat lm_head as part of the LLM block unless we want to be very specific.
+        # If the user wants to train ONLY the head, they might use LoRA or just freeze the body.
+        # Given the config structure, we'll freeze the lm_head here too if freeze_llm is True.
+        for param in model.lm_head.parameters():
+            param.requires_grad = False
+
+    # 3. Projector
     if config.model.freeze_projector:
-        for name, param in model.named_parameters():
-            if "projector" in name:
+        print("Freezing projector...")
+        for param in model.projector.parameters():
+            param.requires_grad = False
+
+    # 4. Action Head
+    # Check if attribute exists (it might not on older configs, but we added it to dataclass)
+    freeze_action_head = getattr(config.model, "freeze_action_head", False)
+    if freeze_action_head:
+        print("Freezing action head...")
+        # Check if model has action_head
+        if hasattr(model, "action_head"):
+            for param in model.action_head.parameters():
                 param.requires_grad = False
+        else:
+            print("Warning: requested to freeze action_head, but model does not have 'action_head' attribute.")
 
     # Debug print to verify
     trainable_params = []
+    total_params = 0
+    trainable_count = 0
+    
     for name, param in model.named_parameters():
+        total_params += param.numel()
         if param.requires_grad:
             trainable_params.append(name)
+            trainable_count += param.numel()
     
-    # print(f"Model keys frozen. Trainable parameters: {len(trainable_params)}")
-    # if len(trainable_params) < 50:
-    print(f"Trainable params: {trainable_params}")
+    print(f"Total parameters: {total_params:,}")
+    print(f"Trainable parameters: {trainable_count:,} ({trainable_count/total_params:.2%})")
+    
+    # If list is too long, print summary
+    if len(trainable_params) > 20:
+        print(f"First 10 trainable modules:")
+        for p in trainable_params[:10]:
+            print(f" - {p}")
+        print("...")
+    else:
+        print(f"Trainable modules: {trainable_params}")
 
     return model
 
