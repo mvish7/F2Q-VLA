@@ -17,6 +17,7 @@ from f2q_vla.configuration_f2q_vla import F2QVLAConfig
 from f2q_vla.delta_tokenizer import DeltaTrajectoryTokenizer
 from f2q_vla.traj_utils import TrajectoryFusionMixin
 from f2q_vla.action_head import ActionChunkingHead
+from f2q_vla.loss import F2QVLALoss
 
 
 VISION_MODEL_ID = "kevin510/fast-vit-hd"
@@ -103,6 +104,10 @@ class F2QVLAForConditionalGeneration(F2QVLAPretrainedModel, GenerationMixin, Tra
         
         # 5. Initialize action head for future trajectory prediction
         self._initialize_action_head(config)
+        
+        # 6. Initialize Loss Calculator
+        loss_weights = getattr(config, "loss_weights", None)
+        self.loss_calculator = F2QVLALoss(loss_weights)
 
         # 6. Tie weights if necessary (standard HF practice)
         self.post_init()
@@ -232,8 +237,43 @@ class F2QVLAForConditionalGeneration(F2QVLAPretrainedModel, GenerationMixin, Tra
         logits = self.lm_head(hidden_states[:, slice_indices, :])
 
         loss = None
+        
+        # Calculate Causal LM Loss
+        lm_loss = None
         if labels is not None:
-            loss = self.loss_function(logits=logits, labels=labels, vocab_size=self.config.text_config.vocab_size)
+            lm_loss = self.loss_function(logits=logits, labels=labels, vocab_size=self.config.text_config.vocab_size)
+            
+        # Trajectory Prediction and Loss
+        ego_future_xyz = kwargs.get("ego_future_xyz")
+        ego_future_rot = kwargs.get("ego_future_rot")
+        
+        traj_output = None
+        xyz_loss, rot_loss = None, None
+        
+        # Only predict trajectory if we have labels or are explicitly asked (implied by having labels in train time)
+        # Note: In inference we usually call predict_future_trajectory manually
+        if (ego_future_xyz is not None and ego_future_rot is not None) or (labels is not None and "ego_future_xyz" in kwargs):
+             # Use the last hidden state from generation logic typically
+             # For training: we use the hidden state corresponding to the last relevant token position
+             # Assumption: The VLM is trained such that the last token's representation contains the full context for trajectory prediction
+             # We take the last token of the sequence: [B, 1, hidden_size]
+             vlm_context = hidden_states[:, -1:, :]
+             
+             traj_output = self.predict_future_trajectory(vlm_context, return_rot_matrix=True)
+             
+        # Compute Total Loss
+        if lm_loss is not None or (traj_output is not None):
+            pred_xyz = traj_output["xyz"] if traj_output else None
+            pred_rot = traj_output["rot_matrix"] if traj_output else None
+            
+            loss_output = self.loss_calculator(
+                text_loss=lm_loss,
+                pred_xyz=pred_xyz,
+                target_xyz=ego_future_xyz,
+                pred_rot=pred_rot,
+                target_rot=ego_future_rot
+            )
+            loss = loss_output.total_loss
 
         return F2QVLAOutputWithPast(
             loss=loss,
