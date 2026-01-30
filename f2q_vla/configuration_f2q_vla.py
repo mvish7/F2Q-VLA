@@ -34,6 +34,15 @@ class F2QVLAConfig(PretrainedConfig):
             action_nhead: int = 16,  # Attention heads
             action_dim_feedforward: int = 4096,  # FFN dimension
             action_dropout: float = 0.1,  # Dropout
+            # Flex Scene Encoder config
+            use_flex_scene_encoder: bool = False,  # Enable Flex encoder
+            num_cameras: int = 4,  # Number of camera views
+            num_timestamps: int = 4,  # Number of timestamps
+            num_scene_tokens: int = 800,  # K = 50 per image × 16 images
+            flex_encoder_layers: int = 6,  # Transformer layers (balanced for ~1B model)
+            flex_encoder_heads: int = 12,  # Attention heads
+            flex_encoder_dim_feedforward: int = 4096,  # FFN dimension
+            flex_encoder_dropout: float = 0.1,  # Dropout
             **kwargs
     ):
 
@@ -81,6 +90,16 @@ class F2QVLAConfig(PretrainedConfig):
         self.action_nhead = action_nhead
         self.action_dim_feedforward = action_dim_feedforward
         self.action_dropout = action_dropout
+        
+        # Flex Scene Encoder config
+        self.use_flex_scene_encoder = use_flex_scene_encoder
+        self.num_cameras = num_cameras
+        self.num_timestamps = num_timestamps
+        self.num_scene_tokens = num_scene_tokens
+        self.flex_encoder_layers = flex_encoder_layers
+        self.flex_encoder_heads = flex_encoder_heads
+        self.flex_encoder_dim_feedforward = flex_encoder_dim_feedforward
+        self.flex_encoder_dropout = flex_encoder_dropout
         
         super().__init__(**kwargs, tie_word_embeddings=tie_word_embeddings)
 

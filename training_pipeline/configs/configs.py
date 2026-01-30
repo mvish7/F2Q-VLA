@@ -14,6 +14,7 @@ class ModelConfig:
     freeze_llm: bool = False
     freeze_projector: bool = False
     freeze_action_head: bool = False
+    freeze_flex_encoder: bool = False  # Flex scene encoder freezing
     
     # Loss weights
     loss_weights: dict = field(default_factory=lambda: {"text": 1.0, "xyz": 1.0, "rot": 1.0})
@@ -21,11 +22,15 @@ class ModelConfig:
 @dataclass
 class DataConfig:
     dataset_path: str
+    image_base_path: str = ""  # Base path to prepend to relative image paths
     test_split_ratio: float = 0.01
     image_size_height: int = 360
     image_size_width: int = 640
     dataloader_num_workers: int = 6
-    max_len: int = 1024
+    # Flex Scene Encoder data config
+    num_cameras: int = 4  # Number of camera views
+    num_timestamps: int = 4  # Number of timestamps per camera
+    # max_len: int = 1024
 
 @dataclass
 class LoRAConfig:
