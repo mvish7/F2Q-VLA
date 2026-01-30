@@ -34,7 +34,8 @@ class F2QVLAProcessor(ProcessorMixin):
         "future_start": "<|traj_future_start|>",
     }
 
-    def __init__(self, image_processor, tokenizer, chat_template, patch_size=64, traj_vocab_size=768, **kwargs):
+    def __init__(self, image_processor, tokenizer, chat_template, patch_size=64, traj_vocab_size=768, 
+                 use_flex_scene_encoder=False, num_scene_tokens=800, **kwargs):
         super().__init__(image_processor, tokenizer, chat_template=chat_template)
         self.patch_size = patch_size
         self.image_token = "<|image_pad|>" if not hasattr(tokenizer, "image_token") else tokenizer.image_token
@@ -61,6 +62,10 @@ class F2QVLAProcessor(ProcessorMixin):
             if getattr(tokenizer, "vision_end_token_id", None)
             else tokenizer.convert_tokens_to_ids(self.vision_end_token)
         )
+        
+        # Flex Scene Encoder config
+        self.use_flex_scene_encoder = use_flex_scene_encoder
+        self.num_scene_tokens = num_scene_tokens  # K=800 by default
         
         # Add trajectory tokens to tokenizer
         self.traj_vocab_size = traj_vocab_size
@@ -133,13 +138,18 @@ class F2QVLAProcessor(ProcessorMixin):
         index = 0
         for i in range(len(text)):
             while self.image_token in text[i]:
-                # Calculate dynamic token count based on image dimensions
-                if index < len(image_sizes):
-                    img_h, img_w = image_sizes[index]
-                    num_image_tokens = self._calculate_num_image_tokens(img_h, img_w)
+                if self.use_flex_scene_encoder:
+                    # Flex mode: Single image placeholder expands to K scene tokens
+                    # The Flex encoder outputs num_scene_tokens (K=800) tokens
+                    num_image_tokens = self.num_scene_tokens
                 else:
-                    # Fallback for when image sizes not available
-                    num_image_tokens = 256  # default for 1024x1024
+                    # Legacy mode: Calculate dynamic token count based on image dimensions
+                    if index < len(image_sizes):
+                        img_h, img_w = image_sizes[index]
+                        num_image_tokens = self._calculate_num_image_tokens(img_h, img_w)
+                    else:
+                        # Fallback for when image sizes not available
+                        num_image_tokens = 256  # default for 1024x1024
                 
                 text[i] = text[i].replace(self.image_token, "<|placeholder|>" * num_image_tokens, 1)
                 index += 1

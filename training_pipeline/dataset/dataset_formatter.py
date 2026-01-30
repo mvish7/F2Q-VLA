@@ -78,10 +78,16 @@ TRAJ_TOKEN = {
     "history_end": "<|traj_history_end|>",
 }
 
-def format_vla_data(sample: Dict[str, Any]) -> List[Dict[str, Any]]:
+def format_vla_data(sample: Dict[str, Any], use_flex: bool = False) -> List[Dict[str, Any]]:
     """Format a VLA sample into a conversation list for F2Q VLA.
     
-    Includes 4 cameras * 5 timestamps images and trajectory placeholders.
+    Args:
+        sample: Raw dataset sample.
+        use_flex: If True, use single image placeholder for Flex Scene Encoder.
+                  If False, use per-image placeholders (16 total).
+    
+    Returns:
+        Conversation list for chat template.
     """
     # 1. System Prompt
     system_msg = "You are a driving assistant that generates safe and accurate actions."
@@ -89,17 +95,32 @@ def format_vla_data(sample: Dict[str, Any]) -> List[Dict[str, Any]]:
     # 2. User Prompt Components
     user_content = []
     
-    # a. Images directly from image_paths
-    # Parse images: 4 cameras, 5 timestamps each
-    # Order: We follow the order in image_paths iteration (Camera, then Time)
+    # a. Images from image_paths
     if "image_paths" in sample:
-        # sample["image_paths"] is {cam_name: [t1, t2, t3, t4, t5], ...}
-        for cam_name, paths in sample["image_paths"].items():
-            for path in paths:
+        if use_flex:
+            # Flex mode: Single image placeholder for entire scene
+            # All images are still loaded, but represented by one token block
+            # The Flex encoder compresses them into K scene tokens
+            # We pick first image path as placeholder (collator loads all images)
+            first_path = None
+            for cam_name, paths in sample["image_paths"].items():
+                if paths:
+                    first_path = paths[0]
+                    break
+            if first_path:
                 user_content.append({
                     "type": "image",
-                    "image": path,  # This path is relative or absolute, handled by collator
+                    "image": first_path,  # Placeholder - collator loads all images
                 })
+        else:
+            # Legacy mode: Per-image placeholders (4 cameras × 4 timestamps = 16)
+            # Order: Camera, then Time
+            for cam_name, paths in sample["image_paths"].items():
+                for path in paths:
+                    user_content.append({
+                        "type": "image",
+                        "image": path,
+                    })
     
     # b. Trajectory History Placeholder
     # Default 48 tokens (16 steps * 3 dims)
@@ -120,7 +141,11 @@ def format_vla_data(sample: Dict[str, Any]) -> List[Dict[str, Any]]:
 
     # 3. Assistant Target (Reasoning)
     # We want the model to learn to output: <|cot_start|> reasoning
-    assistant_text = "<|cot_start|> " + sample.get("coc_reasoning", "")
+    coc_reasoning = sample.get("coc_reasoning", "")
+    # Handle case where coc_reasoning is a list (e.g., from inference output)
+    if isinstance(coc_reasoning, list):
+        coc_reasoning = coc_reasoning[0] if coc_reasoning else ""
+    assistant_text = "<|cot_start|> " + coc_reasoning
     
     return [
         {
