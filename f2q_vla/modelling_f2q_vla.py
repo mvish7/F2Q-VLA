@@ -17,6 +17,7 @@ from f2q_vla.configuration_f2q_vla import F2QVLAConfig
 from f2q_vla.delta_tokenizer import DeltaTrajectoryTokenizer
 from f2q_vla.traj_utils import TrajectoryFusionMixin
 from f2q_vla.action_head import ActionChunkingHead
+from f2q_vla.flex_scene_encoder import FlexSceneEncoder, create_flex_scene_encoder
 from f2q_vla.loss import F2QVLALoss
 
 
@@ -108,8 +109,11 @@ class F2QVLAForConditionalGeneration(F2QVLAPretrainedModel, GenerationMixin, Tra
         # 6. Initialize Loss Calculator
         loss_weights = getattr(config, "loss_weights", None)
         self.loss_calculator = F2QVLALoss(loss_weights)
+        
+        # 7. Initialize Flex Scene Encoder (optional)
+        self._initialize_flex_scene_encoder(config)
 
-        # 6. Tie weights if necessary (standard HF practice)
+        # 8. Tie weights if necessary (standard HF practice)
         self.post_init()
     
     def _initialize_trajectory_tokenizer(self, config):
@@ -139,6 +143,13 @@ class F2QVLAForConditionalGeneration(F2QVLAPretrainedModel, GenerationMixin, Tra
             dim_feedforward=config.action_dim_feedforward,
             dropout=config.action_dropout,
         )
+    
+    def _initialize_flex_scene_encoder(self, config):
+        """Initialize Flex Scene Encoder for multi-camera, multi-timestamp encoding."""
+        if config.use_flex_scene_encoder:
+            self.flex_scene_encoder = create_flex_scene_encoder(config)
+        else:
+            self.flex_scene_encoder = None
 
     def get_input_embeddings(self):
         return self.language_model.get_input_embeddings()
@@ -189,6 +200,8 @@ class F2QVLAForConditionalGeneration(F2QVLAPretrainedModel, GenerationMixin, Tra
         inputs_embeds: Optional[torch.FloatTensor] = None,
         labels: Optional[torch.LongTensor] = None,
         pixel_values: Optional[torch.Tensor] = None,
+        camera_ids: Optional[torch.LongTensor] = None,  # [B, num_images] for Flex encoder
+        timestamp_ids: Optional[torch.LongTensor] = None,  # [B, num_images] for Flex encoder
         cache_position: Optional[torch.LongTensor] = None,
         logits_to_keep: Union[int, torch.Tensor] = 0,
         output_hidden_states: Optional[bool] = None,
@@ -204,8 +217,25 @@ class F2QVLAForConditionalGeneration(F2QVLAPretrainedModel, GenerationMixin, Tra
 
         # 1. Extract Image Features
         if pixel_values is not None:
-            # FastViT forward pass - returns (B, num_patches, 3072)
+            # FastViT forward pass - returns (B*num_images, num_patches, 3072)
             image_embeds = self.vision_tower.forward_images(pixel_values).to(torch.bfloat16)
+            
+            # 2. Flex Scene Encoding (if enabled)
+            if self.flex_scene_encoder is not None and camera_ids is not None:
+                # Reshape: [B*num_images, N, D] -> [B, num_images, N, D]
+                B = camera_ids.shape[0]
+                num_images = camera_ids.shape[1]
+                N = image_embeds.shape[1]
+                D = image_embeds.shape[2]
+                
+                image_embeds = image_embeds.view(B, num_images, N, D)
+                
+                # Encode scene: [B, num_images, N, D] -> [B, K, D]
+                image_embeds = self.flex_scene_encoder(
+                    image_embeds, 
+                    camera_ids.to(image_embeds.device), 
+                    timestamp_ids.to(image_embeds.device)
+                )
 
             # Project to LLM space (3072 -> 1024)
             image_embeds = self.projector(image_embeds)
@@ -253,13 +283,19 @@ class F2QVLAForConditionalGeneration(F2QVLAPretrainedModel, GenerationMixin, Tra
         # Only predict trajectory if we have labels or are explicitly asked (implied by having labels in train time)
         # Note: In inference we usually call predict_future_trajectory manually
         if (ego_future_xyz is not None and ego_future_rot is not None) or (labels is not None and "ego_future_xyz" in kwargs):
-             # Use the last hidden state from generation logic typically
-             # For training: we use the hidden state corresponding to the last relevant token position
-             # Assumption: The VLM is trained such that the last token's representation contains the full context for trajectory prediction
-             # We take the last token of the sequence: [B, 1, hidden_size]
-             vlm_context = hidden_states[:, -1:, :]
+             # Use full hidden states for action head cross-attention
+             vlm_context = hidden_states  # [B, S, hidden_size]
              
-             traj_output = self.predict_future_trajectory(vlm_context, return_rot_matrix=True)
+             # Create memory_key_padding_mask for action head (True = padded/ignored)
+             memory_key_padding_mask = None
+             if attention_mask is not None:
+                 memory_key_padding_mask = ~attention_mask.bool()  # Invert: 0 -> True (pad), 1 -> False (keep)
+             
+             traj_output = self.predict_future_trajectory(
+                 vlm_context,
+                 return_rot_matrix=True,
+                 attention_mask=memory_key_padding_mask,
+             )
              
         # Compute Total Loss
         if lm_loss is not None or (traj_output is not None):
@@ -287,15 +323,18 @@ class F2QVLAForConditionalGeneration(F2QVLAPretrainedModel, GenerationMixin, Tra
         self,
         vlm_context: torch.Tensor,
         return_rot_matrix: bool = True,
+        attention_mask: torch.Tensor | None = None,
     ) -> dict[str, torch.Tensor]:
         """Predict future trajectory from VLM context.
         
-        This method takes the hidden state from the VLM (typically at <|traj_future_start|>)
-        and uses the action head to predict future waypoints.
+        This method takes the hidden states from the VLM and uses the action head
+        to predict future waypoints via cross-attention.
         
         Args:
-            vlm_context: VLM hidden states. Shape: [B, S, hidden_size] where S is usually 1.
+            vlm_context: VLM hidden states. Shape: [B, S, hidden_size].
             return_rot_matrix: If True, convert 6D rotation to 3x3 matrix.
+            attention_mask: Optional mask for padded positions. Shape: [B, S].
+                True indicates padded (ignored) positions.
             
         Returns:
             Dictionary containing:
@@ -303,7 +342,11 @@ class F2QVLAForConditionalGeneration(F2QVLAPretrainedModel, GenerationMixin, Tra
                 - "rot6d": 6D rotation representation [B, num_queries, 6]
                 - "rot_matrix": (optional) 3x3 rotation matrices [B, num_queries, 3, 3]
         """
-        return self.action_head(vlm_context, return_rot_matrix=return_rot_matrix)
+        return self.action_head(
+            vlm_context,
+            return_rot_matrix=return_rot_matrix,
+            memory_key_padding_mask=attention_mask,
+        )
 
 
 
