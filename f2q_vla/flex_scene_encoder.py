@@ -159,7 +159,8 @@ class FlexSceneEncoder(nn.Module):
         image_tokens = image_tokens + cam_embed + time_embed
         
         # 4. Flatten images: [B, num_images * N, D]
-        image_tokens = image_tokens.view(B, num_images * N, D)
+        # Use reshape instead of view to handle non-contiguous tensors from expand()
+        image_tokens = image_tokens.reshape(B, num_images * N, D)
         
         # 5. Prepare scene tokens: [B, K, D]
         scene_tokens = self.scene_tokens.unsqueeze(0).expand(B, -1, -1)
