@@ -1,6 +1,6 @@
 import torch
-from transformers import AutoConfig, AutoModelForCausalLM, AutoProcessor
-from peft import LoraConfig, get_peft_model
+from transformers import AutoConfig, AutoModelForCausalLM, AutoProcessor, BitsAndBytesConfig
+from peft import LoraConfig, get_peft_model, prepare_model_for_kbit_training
 from typing import Tuple, Any
 
 # Import F2Q_VLA components
@@ -34,12 +34,37 @@ def load_model_and_processor(config) -> Tuple[Any, Any]:
     # Load Model
     torch_dtype = getattr(torch, config.model.torch_dtype) if hasattr(torch, config.model.torch_dtype) else torch.bfloat16
     
+    # Configure 4-bit quantization if QLoRA is enabled
+    quantization_config = None
+    if config.qlora and config.qlora.enabled:
+        compute_dtype = getattr(torch, config.qlora.bnb_4bit_compute_dtype, torch.bfloat16)
+        quantization_config = BitsAndBytesConfig(
+            load_in_4bit=config.qlora.load_in_4bit,
+            bnb_4bit_quant_type=config.qlora.bnb_4bit_quant_type,
+            bnb_4bit_compute_dtype=compute_dtype,
+            bnb_4bit_use_double_quant=config.qlora.bnb_4bit_use_double_quant,
+        )
+        print(f"Using QLoRA with 4-bit quantization: quant_type={config.qlora.bnb_4bit_quant_type}, compute_dtype={compute_dtype}")
+    
     model = AutoModelForCausalLM.from_pretrained(
         config.model.model_path,
         torch_dtype=torch_dtype,
         attn_implementation=config.model.attn_implementation,
+        quantization_config=quantization_config,
         trust_remote_code=False
     )
+    
+    # Prepare model for k-bit training if QLoRA is enabled
+    if config.qlora and config.qlora.enabled:
+        print("Preparing model for k-bit training...")
+        model = prepare_model_for_kbit_training(model)
+
+    # Sync processor's flex encoder settings with model config
+    # This ensures the processor inserts the correct number of image tokens
+    if hasattr(model.config, 'use_flex_scene_encoder'):
+        processor.use_flex_scene_encoder = model.config.use_flex_scene_encoder
+        processor.num_scene_tokens = getattr(model.config, 'num_scene_tokens', 800)
+        print(f"Synced processor flex encoder settings: use_flex_scene_encoder={processor.use_flex_scene_encoder}, num_scene_tokens={processor.num_scene_tokens}")
 
     # Resize token embeddings to match tokenizer
     # unique to F2Q VLA: we add trajectory tokens to the tokenizer in the processor
@@ -89,6 +114,16 @@ def apply_freezing(model, config):
         else:
             print("Warning: requested to freeze action_head, but model does not have 'action_head' attribute.")
 
+    # 5. Flex Scene Encoder
+    freeze_flex_encoder = getattr(config.model, "freeze_flex_encoder", False)
+    if freeze_flex_encoder:
+        print("Freezing flex scene encoder...")
+        if hasattr(model, "flex_scene_encoder") and model.flex_scene_encoder is not None:
+            for param in model.flex_scene_encoder.parameters():
+                param.requires_grad = False
+        else:
+            print("Warning: requested to freeze flex_scene_encoder, but model does not have it.")
+
     # Debug print to verify
     trainable_params = []
     total_params = 0
@@ -100,8 +135,8 @@ def apply_freezing(model, config):
             trainable_params.append(name)
             trainable_count += param.numel()
     
-    print(f"Total parameters: {total_params:,}")
-    print(f"Trainable parameters: {trainable_count:,} ({trainable_count/total_params:.2%})")
+    # print(f"Total parameters: {total_params:,}")
+    # print(f"Trainable parameters: {trainable_count:,} ({trainable_count/total_params:.2%})")
     
     # If list is too long, print summary
     if len(trainable_params) > 20:

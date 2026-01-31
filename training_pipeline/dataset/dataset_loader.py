@@ -47,5 +47,7 @@ class DatasetLoader:
         elif hasattr(self.processor.tokenizer, "image_token_id") and self.processor.tokenizer.image_token_id is not None:
              image_token_id = self.processor.tokenizer.image_token_id
 
+        # Check if processor is configured for flex scene encoder
+        use_flex = getattr(self.processor, 'use_flex_scene_encoder', False)
 
-        return DataCollator(self.processor, image_token_id, self.config)
+        return DataCollator(self.processor, image_token_id, self.config, use_flex=use_flex)
