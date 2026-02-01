@@ -68,13 +68,16 @@ class ActionChunkingHead(nn.Module):
         self,
         vlm_context: torch.Tensor,
         return_rot_matrix: bool = True,
+        memory_key_padding_mask: torch.Tensor | None = None,
     ) -> dict[str, torch.Tensor]:
         """Forward pass to predict future trajectory.
         
         Args:
             vlm_context: VLM hidden states at context token(s). 
-                Shape: [B, S, hidden_size] where S is context sequence length (usually 1).
+                Shape: [B, S, hidden_size] where S is context sequence length.
             return_rot_matrix: If True, convert 6D rotation to 3x3 matrix.
+            memory_key_padding_mask: Optional mask for padded positions in vlm_context.
+                Shape: [B, S]. True indicates padded (ignored) positions.
             
         Returns:
             Dictionary containing:
@@ -90,7 +93,11 @@ class ActionChunkingHead(nn.Module):
         
         # Transformer decoder: queries attend to vlm_context
         # tgt=queries (what we want to decode), memory=vlm_context (what we attend to)
-        decoder_output = self.decoder(tgt=queries, memory=vlm_context)
+        decoder_output = self.decoder(
+            tgt=queries,
+            memory=vlm_context,
+            memory_key_padding_mask=memory_key_padding_mask,
+        )
         
         # Predict outputs
         xyz = self.xyz_head(decoder_output)  # [B, num_queries, 3]

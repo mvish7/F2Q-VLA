@@ -218,7 +218,9 @@ class F2QVLAForConditionalGeneration(F2QVLAPretrainedModel, GenerationMixin, Tra
         # 1. Extract Image Features
         if pixel_values is not None:
             # FastViT forward pass - returns (B*num_images, num_patches, 3072)
-            image_embeds = self.vision_tower.forward_images(pixel_values).to(torch.bfloat16)
+            # Use embedding layer dtype to ensure compatibility with QLoRA/mixed precision
+            target_dtype = self.get_input_embeddings().weight.dtype
+            image_embeds = self.vision_tower.forward_images(pixel_values).to(target_dtype)
             
             # 2. Flex Scene Encoding (if enabled)
             if self.flex_scene_encoder is not None and camera_ids is not None:

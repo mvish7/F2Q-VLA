@@ -35,7 +35,7 @@ class F2QVLAConfig(PretrainedConfig):
             action_dim_feedforward: int = 4096,  # FFN dimension
             action_dropout: float = 0.1,  # Dropout
             # Flex Scene Encoder config
-            use_flex_scene_encoder: bool = False,  # Enable Flex encoder
+            use_flex_scene_encoder: bool = True,  # Enable Flex encoder
             num_cameras: int = 4,  # Number of camera views
             num_timestamps: int = 4,  # Number of timestamps
             num_scene_tokens: int = 800,  # K = 50 per image × 16 images
