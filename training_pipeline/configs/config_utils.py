@@ -2,7 +2,7 @@ import yaml
 import os
 import dataclasses
 from typing import Type, TypeVar, Any, Dict
-from .configs import VLMTrainingConfig, ModelConfig, DataConfig, TrainingConfig, LoRAConfig
+from .configs import VLMTrainingConfig, ModelConfig, DataConfig, TrainingConfig, LoRAConfig, QLoRAConfig
 
 T = TypeVar("T")
 
@@ -32,11 +32,16 @@ def load_config(config_path: str) -> VLMTrainingConfig:
     if "lora" in config_dict and config_dict["lora"]:
         lora_config = create_config_object(LoRAConfig, config_dict["lora"])
 
+    qlora_config = None
+    if "qlora" in config_dict and config_dict["qlora"]:
+        qlora_config = create_config_object(QLoRAConfig, config_dict["qlora"])
+
     return VLMTrainingConfig(
         model=model_config,
         data=data_config,
         training=training_config,
-        lora=lora_config
+        lora=lora_config,
+        qlora=qlora_config
     )
 
 def save_config(config: VLMTrainingConfig, save_path: str):

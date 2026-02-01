@@ -1,0 +1,66 @@
+model:
+  model_path: "/media/vishal/workspace/projects/VLA/f2q_checkpoints/local_densecaption_400k_merged"
+  type: "f2q_vla"
+  freeze_vision_tower: true
+  freeze_llm: false
+  freeze_projector: false
+  freeze_action_head: false
+
+data:
+  dataset_path: "/media/vishal/datasets/alpamayo_r1/ar1_hf_with_coc_reasoning"
+  image_base_path: "/media/vishal/datasets/alpamayo_r1"
+  test_split_ratio: 0.01
+  image_size_height: 360
+  image_size_width: 640
+  dataloader_num_workers: 2  # Reduced to avoid memory fragmentation
+  dataloader_pin_memory: false  # Disable pin_memory to save GPU memory
+  dataloader_prefetch_factor: 2  # Reduce prefetching
+
+training:
+  output_dir: "/media/vishal/workspace/projects/VLA/checkpoints/vla_qlora_testing"
+  num_train_epochs: 1
+  learning_rate: 3.0e-4
+  weight_decay: 0.01
+  per_device_train_batch_size: 1
+  gradient_accumulation_steps: 64
+  report_to: "tensorboard"
+  save_steps: 500
+  logging_steps: 100
+  use_liger_kernel: true
+  torch_empty_cache_steps: 1
+  optim: "adamw_torch_fused"
+  gradient_checkpointing: true  # Recommended for QLoRA
+
+# QLoRA: 4-bit quantization configuration
+qlora:
+  enabled: true
+  load_in_4bit: true
+  bnb_4bit_quant_type: "nf4"
+  bnb_4bit_compute_dtype: "bfloat16"
+  bnb_4bit_use_double_quant: true
+
+# LoRA adapters (required when using QLoRA)
+lora:
+  enabled: true
+  r: 16
+  lora_alpha: 32
+  target_modules:
+    # LLM layers
+    - "q_proj"
+    - "k_proj"
+    - "v_proj"
+    - "o_proj"
+    - "gate_proj"
+    - "up_proj"
+    - "down_proj"
+    - "embed_tokens"
+    - "lm_head"
+    # ActionChunkingHead (TransformerDecoder) - out_proj and FFN layers
+    # Note: PEFT matches these names anywhere they appear in the model
+    - "out_proj"      # Matches self_attn.out_proj and multihead_attn.out_proj
+    - "linear1"       # FFN first layer  
+    - "linear2"       # FFN second layer
+    - "xyz_head"
+    - "rot_head"
+  modules_to_save:
+    - "flex_scene_encoder"

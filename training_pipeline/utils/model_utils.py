@@ -38,13 +38,24 @@ def load_model_and_processor(config) -> Tuple[Any, Any]:
     quantization_config = None
     if config.qlora and config.qlora.enabled:
         compute_dtype = getattr(torch, config.qlora.bnb_4bit_compute_dtype, torch.bfloat16)
+        # Skip modules that are not compatible with 4-bit quantization
+        # These are custom modules in F2Q_VLA that should not be quantized
+        skip_modules = [
+            "vision_tower",      # FastViT vision encoder
+            "projector",         # Vision-to-LM projector
+            "flex_scene_encoder", # Multi-camera/timestamp encoder
+            "action_head",       # Action chunking head
+            "lm_head",           # LM classification head
+        ]
         quantization_config = BitsAndBytesConfig(
             load_in_4bit=config.qlora.load_in_4bit,
             bnb_4bit_quant_type=config.qlora.bnb_4bit_quant_type,
             bnb_4bit_compute_dtype=compute_dtype,
             bnb_4bit_use_double_quant=config.qlora.bnb_4bit_use_double_quant,
+            llm_int8_skip_modules=skip_modules,
         )
         print(f"Using QLoRA with 4-bit quantization: quant_type={config.qlora.bnb_4bit_quant_type}, compute_dtype={compute_dtype}")
+        print(f"Skipping modules from quantization: {skip_modules}")
     
     model = AutoModelForCausalLM.from_pretrained(
         config.model.model_path,
@@ -54,10 +65,9 @@ def load_model_and_processor(config) -> Tuple[Any, Any]:
         trust_remote_code=False
     )
     
-    # Prepare model for k-bit training if QLoRA is enabled
-    if config.qlora and config.qlora.enabled:
-        print("Preparing model for k-bit training...")
-        model = prepare_model_for_kbit_training(model)
+    # Note: We skip prepare_model_for_kbit_training() as it casts modules to float32
+    # which conflicts with bf16 training. With modern bitsandbytes, the
+    # BitsAndBytesConfig handles preparation automatically.
 
     # Sync processor's flex encoder settings with model config
     # This ensures the processor inserts the correct number of image tokens

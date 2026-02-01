@@ -27,6 +27,8 @@ class DataConfig:
     image_size_height: int = 360
     image_size_width: int = 640
     dataloader_num_workers: int = 6
+    dataloader_pin_memory: bool = True
+    dataloader_prefetch_factor: int = 2
     # Flex Scene Encoder data config
     num_cameras: int = 4  # Number of camera views
     num_timestamps: int = 4  # Number of timestamps per camera
@@ -42,6 +44,15 @@ class LoRAConfig:
     use_rslora: bool = True
     target_modules: List[str] = field(default_factory=lambda: ["q_proj", "v_proj"])
     modules_to_save: List[str] = field(default_factory=list)
+
+@dataclass
+class QLoRAConfig:
+    """Configuration for QLoRA (4-bit quantized LoRA) training."""
+    enabled: bool = False
+    load_in_4bit: bool = True
+    bnb_4bit_quant_type: str = "nf4"  # "nf4" or "fp4"
+    bnb_4bit_compute_dtype: str = "bfloat16"
+    bnb_4bit_use_double_quant: bool = True
 
 @dataclass
 class TrainingConfig:
@@ -62,6 +73,9 @@ class TrainingConfig:
     bf16: bool = True
     max_grad_norm: float = 1.0
     weight_decay: float = 0.01
+    use_liger_kernel: bool = False  # Enable Liger Kernel for faster training
+    torch_empty_cache_steps: int = None  # Clear CUDA cache every N steps (None = disabled)
+    optim: str = "adamw_torch"  # Optimizer type: adamw_torch, adamw_torch_fused, adafactor, sgd, etc.
     
 @dataclass
 class VLMTrainingConfig:
@@ -69,3 +83,4 @@ class VLMTrainingConfig:
     data: DataConfig
     training: TrainingConfig
     lora: Optional[LoRAConfig] = None
+    qlora: Optional[QLoRAConfig] = None
