@@ -69,8 +69,13 @@ class DataCollator:
             images=flat_images if flat_images else None, 
             return_tensors="pt", 
             padding=True,
-            size={"height": self.config.image_size_height, "width": self.config.image_size_width}
+            crop_size={"height": self.config.image_size_height, "width": self.config.image_size_width}
         )
+        
+        # Close PIL images to free memory immediately after processing
+        for img in flat_images:
+            img.close()
+        del flat_images
         
         # 4. Prepare Labels for Causal LM
         labels = batch["input_ids"].clone()
