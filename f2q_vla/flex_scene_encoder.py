@@ -35,6 +35,7 @@ class FlexSceneEncoder(nn.Module):
         num_heads: int = 12,
         dim_feedforward: int = 4096,
         dropout: float = 0.1,
+        gradient_checkpointing: bool = True,  # Default to True for memory efficiency
     ):
         """Initialize FlexSceneEncoder.
         
@@ -47,6 +48,7 @@ class FlexSceneEncoder(nn.Module):
             num_heads: Number of attention heads.
             dim_feedforward: Feedforward network dimension.
             dropout: Dropout probability.
+            gradient_checkpointing: If True, use gradient checkpointing to save memory.
         """
         super().__init__()
         
@@ -54,6 +56,7 @@ class FlexSceneEncoder(nn.Module):
         self.vision_hidden_size = vision_hidden_size
         self.num_cameras = num_cameras
         self.num_timestamps = num_timestamps
+        self.gradient_checkpointing = gradient_checkpointing
         
         # Learnable scene tokens (queries)
         self.scene_tokens = nn.Parameter(
@@ -79,7 +82,11 @@ class FlexSceneEncoder(nn.Module):
             batch_first=True,
             norm_first=True,  # Pre-norm for better training stability
         )
-        self.encoder = nn.TransformerEncoder(encoder_layer, num_layers=num_layers)
+        self.encoder = nn.TransformerEncoder(
+            encoder_layer, 
+            num_layers=num_layers,
+            enable_nested_tensor=False,  # Disable for gradient checkpointing compatibility
+        )
         
         # Layer norm for scene tokens initialization
         self.scene_token_norm = nn.LayerNorm(vision_hidden_size)
@@ -169,8 +176,21 @@ class FlexSceneEncoder(nn.Module):
         # 6. Prepend scene tokens: [B, K + num_images*N, D]
         combined = torch.cat([scene_tokens, image_tokens], dim=1)
         
-        # 7. Self-attention over all tokens
-        output = self.encoder(combined)
+        # 7. Self-attention over all tokens (with optional gradient checkpointing)
+        if self.gradient_checkpointing and self.training:
+            # Process each layer with gradient checkpointing to save memory
+            # This recomputes activations during backward instead of storing them
+            from torch.utils.checkpoint import checkpoint
+            
+            output = combined
+            for layer in self.encoder.layers:
+                # Use checkpoint for each transformer layer
+                output = checkpoint(layer, output, use_reentrant=False)
+            # Apply final norm if present
+            if self.encoder.norm is not None:
+                output = self.encoder.norm(output)
+        else:
+            output = self.encoder(combined)
         
         # 8. Return only scene tokens (first K)
         return output[:, :self.num_scene_tokens, :]
@@ -194,4 +214,5 @@ def create_flex_scene_encoder(config) -> FlexSceneEncoder:
         num_heads=getattr(config, "flex_encoder_heads", 12),
         dim_feedforward=getattr(config, "flex_encoder_dim_feedforward", 4096),
         dropout=getattr(config, "flex_encoder_dropout", 0.1),
+        gradient_checkpointing=getattr(config, "flex_encoder_gradient_checkpointing", True),
     )
