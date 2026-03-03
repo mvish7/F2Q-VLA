@@ -39,9 +39,9 @@ class F2QVLAConfig(PretrainedConfig):
             num_cameras: int = 4,  # Number of camera views
             num_timestamps: int = 4,  # Number of timestamps
             num_scene_tokens: int = 800,  # K = 50 per image × 16 images
-            flex_encoder_layers: int = 6,  # Transformer layers (balanced for ~1B model)
-            flex_encoder_heads: int = 12,  # Attention heads
-            flex_encoder_dim_feedforward: int = 4096,  # FFN dimension
+            flex_encoder_layers: int = 4,  # Transformer layers (balanced for ~1B model)
+            flex_encoder_heads: int = 8,  # Attention heads
+            flex_encoder_dim_feedforward: int = 3072,  # FFN dimension
             flex_encoder_dropout: float = 0.1,  # Dropout
             **kwargs
     ):
