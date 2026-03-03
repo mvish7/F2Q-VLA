@@ -1,33 +1,37 @@
 model:
-  model_path: "/media/vishal/workspace/projects/VLA/f2q_vla_artifacts"
+  model_path: "/media/vishal/workspace/projects/VLA/f2q_checkpoints/local_densecaption_400k_merged"
   type: "f2q_vla"
   freeze_vision_tower: true
   freeze_llm: false
   freeze_projector: false
+  freeze_action_head: false
 
 data:
-  dataset_path: "/media/vishal/datasets/pixmo/metadata_cleaned/"
+  dataset_path: "/media/vishal/datasets/alpamayo_r1/ar1_hf_with_coc_reasoning"
+  image_base_path: "/media/vishal/datasets/alpamayo_r1"
   test_split_ratio: 0.01
   image_size_height: 360
   image_size_width: 640
-  dataloader_num_workers: 6
-  max_len: 1024
+  dataloader_num_workers: 4
+  # max_len: 1024
 
 training:
-  output_dir: "/media/vishal/workspace/projects/VLA/checkpoints/testing_new_pipeline"
+  output_dir: "/media/vishal/workspace/projects/VLA/checkpoints/vla_wo_flex_testing"
   num_train_epochs: 1
   learning_rate: 3.0e-4
   weight_decay: 0.01
-  per_device_train_batch_size: 4
-  gradient_accumulation_steps: 32
+  per_device_train_batch_size: 1
+  gradient_accumulation_steps: 64
   report_to: "tensorboard"
   save_steps: 500
   logging_steps: 100
-
+  use_liger_kernel: true
+  torch_empty_cache_steps: 1
+  optim: "adamw_torch_fused" 
 lora:
   enabled: true
-  r: 128
-  lora_alpha: 256
+  r: 16
+  lora_alpha: 32
   target_modules:
     - "q_proj"
     - "k_proj"
@@ -36,6 +40,10 @@ lora:
     - "gate_proj"
     - "up_proj"
     - "down_proj"
-  modules_to_save:
-    - "lm_head"
     - "embed_tokens"
+    - "lm_head"
+    # - "Linear"
+  modules_to_save:
+    - "action_head"
+    - "flex_scene_encoder"
+    

@@ -12,28 +12,28 @@ data:
   test_split_ratio: 0.01
   image_size_height: 360
   image_size_width: 640
-  dataloader_num_workers: 2  # Reduced to avoid memory fragmentation
-  dataloader_pin_memory: false  # Disable pin_memory to save GPU memory
-  dataloader_prefetch_factor: 2  # Reduce prefetching
+  dataloader_num_workers: 4  # Use main process to avoid memory fragmentation from prefetching
+  dataloader_pin_memory: true  # Disable pin_memory to save GPU memory
+  # dataloader_prefetch_factor not used when num_workers=0
 
 training:
   output_dir: "/media/vishal/workspace/projects/VLA/checkpoints/vla_qlora_testing"
   num_train_epochs: 1
   learning_rate: 3.0e-4
   weight_decay: 0.01
-  per_device_train_batch_size: 1
-  gradient_accumulation_steps: 64
+  per_device_train_batch_size: 4
+  gradient_accumulation_steps: 16
   report_to: "tensorboard"
   save_steps: 500
   logging_steps: 100
   use_liger_kernel: true
   torch_empty_cache_steps: 1
-  optim: "adamw_torch_fused"
+  optim: "adamw_bnb_8bit"
   gradient_checkpointing: true  # Recommended for QLoRA
 
 # QLoRA: 4-bit quantization configuration
 qlora:
-  enabled: true
+  enabled: false
   load_in_4bit: true
   bnb_4bit_quant_type: "nf4"
   bnb_4bit_compute_dtype: "bfloat16"
@@ -42,8 +42,8 @@ qlora:
 # LoRA adapters (required when using QLoRA)
 lora:
   enabled: true
-  r: 16
-  lora_alpha: 32
+  r: 64
+  lora_alpha: 128
   target_modules:
     # LLM layers
     - "q_proj"
@@ -57,10 +57,11 @@ lora:
     - "lm_head"
     # ActionChunkingHead (TransformerDecoder) - out_proj and FFN layers
     # Note: PEFT matches these names anywhere they appear in the model
-    - "out_proj"      # Matches self_attn.out_proj and multihead_attn.out_proj
-    - "linear1"       # FFN first layer  
-    - "linear2"       # FFN second layer
-    - "xyz_head"
-    - "rot_head"
+    #- "out_proj"      # Matches self_attn.out_proj and multihead_attn.out_proj
+    #- "linear1"       # FFN first layer  
+    #- "linear2"       # FFN second layer
+    #- "xyz_head"
+    #- "rot_head"
   modules_to_save:
     - "flex_scene_encoder"
+    - "action_head"

@@ -32,9 +32,14 @@ def get_training_args(config: VLMTrainingConfig, data_collator: Any) -> SFTConfi
         warmup_ratio=config.training.warmup_ratio,
         gradient_checkpointing=config.training.gradient_checkpointing,
         dataloader_num_workers=config.data.dataloader_num_workers,
-        dataloader_pin_memory=True,
-        max_seq_length=config.data.max_len,
+        dataloader_pin_memory=config.data.dataloader_pin_memory,
+        # prefetch_factor must be None when num_workers=0
+        dataloader_prefetch_factor=config.data.dataloader_prefetch_factor if config.data.dataloader_num_workers > 0 else None,
+        # max_seq_length=config.data.max_len,
         dataset_kwargs={"skip_prepare_dataset": True}, # We prepare it manually
         dataset_text_field="text", # Dummy field as we use custom collator
         remove_unused_columns=False, # Essential for custom VLM collators often
+        use_liger_kernel=config.training.use_liger_kernel,  # Liger Kernel optimization
+        torch_empty_cache_steps=config.training.torch_empty_cache_steps,  # Clear CUDA cache every N steps
+        optim=config.training.optim,  # Optimizer type,
     )
