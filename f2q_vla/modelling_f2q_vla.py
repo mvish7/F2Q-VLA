@@ -21,14 +21,11 @@ from f2q_vla.flex_scene_encoder import FlexSceneEncoder, create_flex_scene_encod
 from f2q_vla.loss import F2QVLALoss
 
 
-VISION_MODEL_ID = "kevin510/fast-vit-hd"
-
-
 class F2QVLAProjector(nn.Module):
     def __init__(self, config):
         super().__init__()
-        # FastViT hidden size (3072) -> Qwen hidden size (1024)
-        self.linear_1 = nn.Linear(config.vision_hidden_size, config.text_config.hidden_size, bias=False)
+        # DinoV3 hidden size -> Qwen hidden size
+        self.linear_1 = nn.Linear(config.vision_config.hidden_size, config.text_config.hidden_size, bias=False)
         self.act = nn.GELU()
         self.linear_2 = nn.Linear(config.text_config.hidden_size, config.text_config.hidden_size, bias=False)
 
@@ -87,9 +84,9 @@ class F2QVLAForConditionalGeneration(F2QVLAPretrainedModel, GenerationMixin, Tra
         super().__init__(config)
         self.config = config
 
-        # 1. Load Vision Encoder (FastViT-HD)
+        # 1. Load Vision Encoder (DINOv3)
         # We use from_config to initialize empty structure, weights loaded later
-        self.vision_tower = AutoModel.from_config(config.vision_config, trust_remote_code=True)
+        self.vision_tower = AutoModel.from_config(config.vision_config)
 
         # 2. Load LLM (Qwen3)
         self.language_model = AutoModel.from_config(config.text_config)
@@ -217,10 +214,11 @@ class F2QVLAForConditionalGeneration(F2QVLAPretrainedModel, GenerationMixin, Tra
 
         # 1. Extract Image Features
         if pixel_values is not None:
-            # FastViT forward pass - returns (B*num_images, num_patches, 3072)
+            # DINOv3 forward pass - returns last_hidden_state (B*num_images, seq_len, hidden)
             # Use embedding layer dtype to ensure compatibility with QLoRA/mixed precision
             target_dtype = self.get_input_embeddings().weight.dtype
-            image_embeds = self.vision_tower.forward_images(pixel_values).to(target_dtype)
+            vision_outputs = self.vision_tower(pixel_values.to(target_dtype), output_hidden_states=True)
+            image_embeds = vision_outputs.last_hidden_state
             
             # 2. Flex Scene Encoding (if enabled)
             if self.flex_scene_encoder is not None and camera_ids is not None:
@@ -239,7 +237,7 @@ class F2QVLAForConditionalGeneration(F2QVLAPretrainedModel, GenerationMixin, Tra
                     timestamp_ids.to(image_embeds.device)
                 )
 
-            # Project to LLM space (3072 -> 1024)
+            # Project to LLM space
             image_embeds = self.projector(image_embeds)
 
             image_mask = self.get_placeholder_mask(

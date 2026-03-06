@@ -27,7 +27,7 @@ class FlexSceneEncoder(nn.Module):
     
     def __init__(
         self,
-        vision_hidden_size: int = 3072,
+        vision_hidden_size: int,
         num_scene_tokens: int = 800,
         num_cameras: int = 4,
         num_timestamps: int = 4,

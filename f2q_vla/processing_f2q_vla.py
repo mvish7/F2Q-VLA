@@ -7,12 +7,12 @@ from transformers.image_processing_base import BatchFeature
 from transformers.processing_utils import ImagesKwargs, ProcessingKwargs, Unpack
 
 
-class FastViTImagesKwargs(ImagesKwargs):
+class Dinov3ImagesKwargs(ImagesKwargs):
     size: Optional[dict]
 
 
 class F2QVLAProcessorKwargs(ProcessingKwargs, total=False):
-    images_kwargs: FastViTImagesKwargs
+    images_kwargs: Dinov3ImagesKwargs
     _defaults = {
         "text_kwargs": {
             "padding": False,
@@ -23,7 +23,7 @@ class F2QVLAProcessorKwargs(ProcessingKwargs, total=False):
 
 class F2QVLAProcessor(ProcessorMixin):
     attributes = ["image_processor", "tokenizer"]
-    image_processor_class = "CLIPImageProcessor"
+    image_processor_class = "DINOv3ViTImageProcessorFast"
     tokenizer_class = ("Qwen2Tokenizer", "Qwen2TokenizerFast")
     
     # Trajectory token constants
@@ -34,10 +34,10 @@ class F2QVLAProcessor(ProcessorMixin):
         "future_start": "<|traj_future_start|>",
     }
 
-    def __init__(self, image_processor, tokenizer, chat_template, patch_size=64, traj_vocab_size=768, 
+    def __init__(self, image_processor, tokenizer, chat_template, vision_config=None, traj_vocab_size=768, 
                  use_flex_scene_encoder=False, num_scene_tokens=800, **kwargs):
         super().__init__(image_processor, tokenizer, chat_template=chat_template)
-        self.patch_size = patch_size
+        self.vision_config = vision_config
         self.image_token = "<|image_pad|>" if not hasattr(tokenizer, "image_token") else tokenizer.image_token
         self.image_processor = image_processor
         self.tokenizer = tokenizer
@@ -100,12 +100,16 @@ class F2QVLAProcessor(ProcessorMixin):
         self.traj_token_ids = tokenizer.traj_token_ids
 
     def _calculate_num_image_tokens(self, image_height, image_width):
-        """Calculate number of tokens based on image dimensions and patch size.
+        """Calculate number of tokens based on image dimensions.
         
-        Formula: ceil(H/patch_size) * ceil(W/patch_size)
-        For FastViT-HD with patch_size=64
+        DinoV3 formula: (H // patch_size) * (W // patch_size) + 1 (CLS token)
+        Falls back to a default if vision_config is not available.
         """
-        return math.ceil(image_height / self.patch_size) * math.ceil(image_width / self.patch_size)
+        if self.vision_config is not None:
+            patch_size = self.vision_config.patch_size
+        else:
+            patch_size = 16  # DinoV3 default patch size
+        return (image_height // patch_size) * (image_width // patch_size) + 1
 
     def __call__(self, text=None, images=None, return_tensors=None, **kwargs: Unpack[F2QVLAProcessorKwargs]):
         output_kwargs = self._merge_kwargs(
