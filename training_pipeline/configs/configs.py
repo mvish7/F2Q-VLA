@@ -17,7 +17,7 @@ class ModelConfig:
     freeze_flex_encoder: bool = False  # Flex scene encoder freezing
     
     # Loss weights
-    loss_weights: dict = field(default_factory=lambda: {"text": 1.0, "xyz": 1.0, "rot": 1.0})
+    loss_weights: dict = field(default_factory=lambda: {"text": 1.0, "xyz": 0.001, "rot": 0.001})
 
 @dataclass
 class DataConfig:

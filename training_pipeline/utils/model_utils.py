@@ -41,11 +41,12 @@ def load_model_and_processor(config) -> Tuple[Any, Any]:
         # Skip modules that are not compatible with 4-bit quantization
         # These are custom modules in F2Q_VLA that should not be quantized
         skip_modules = [
-            "vision_tower",      # FastViT vision encoder
+            "vision_tower",      # DinoV3 vision encoder
             "projector",         # Vision-to-LM projector
             "flex_scene_encoder", # Multi-camera/timestamp encoder
             "action_head",       # Action chunking head
-            "lm_head",           # LM classification head
+            "lm_head",           # LM classification head (tied with embed_tokens)
+            "embed_tokens",      # MUST be skipped if lm_head is skipped due to weight tying!
         ]
         quantization_config = BitsAndBytesConfig(
             load_in_4bit=config.qlora.load_in_4bit,
@@ -65,10 +66,15 @@ def load_model_and_processor(config) -> Tuple[Any, Any]:
         trust_remote_code=False
     )
     
+    # Ensure custom modules are natively cast to model's torch_dtype
+    # This prevents Float vs BFloat16 crashes when running purely in BFloat16 without autocast
+    for module_name in ["flex_scene_encoder", "projector", "action_head", "loss_calculator"]:
+        if hasattr(model, module_name) and getattr(model, module_name) is not None:
+            getattr(model, module_name).to(torch_dtype)
+    
     # Note: We skip prepare_model_for_kbit_training() as it casts modules to float32
     # which conflicts with bf16 training. With modern bitsandbytes, the
     # BitsAndBytesConfig handles preparation automatically.
-
     # Sync processor's flex encoder settings with model config
     # This ensures the processor inserts the correct number of image tokens
     if hasattr(model.config, 'use_flex_scene_encoder'):
@@ -80,6 +86,14 @@ def load_model_and_processor(config) -> Tuple[Any, Any]:
     # unique to F2Q VLA: we add trajectory tokens to the tokenizer in the processor
     # so we must resize the model embeddings to accommodate them
     model.resize_token_embeddings(len(processor.tokenizer))
+    
+    # Sync loss weights from training config to model's loss calculator
+    # The model's F2QVLAConfig (loaded from pretrained) may not have loss_weights,
+    # so we override from the training pipeline config
+    if hasattr(config.model, 'loss_weights') and config.model.loss_weights:
+        from f2q_vla.loss import F2QVLALoss
+        model.loss_calculator = F2QVLALoss(config.model.loss_weights)
+        print(f"Applied loss weights from training config: {config.model.loss_weights}")
     
     return model, processor
 

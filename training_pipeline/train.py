@@ -30,6 +30,10 @@ def main():
         print("Setting up LoRA adapters...")
         model = setup_lora(model, config.lora)
     
+    # Enable input require grads AFTER LoRA setup so the hook survives PEFT wrapping.
+    # This is needed for gradient checkpointing to work with frozen modules (e.g. LLM).
+    model.enable_input_require_grads()
+    
     # Load and Prepare Dataset
     print("Loading dataset...")
     dataset_loader = DatasetLoader(config.data, processor)

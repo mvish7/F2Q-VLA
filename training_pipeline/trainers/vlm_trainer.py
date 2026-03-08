@@ -23,6 +23,8 @@ class VLMTrainer(SFTTrainer):
         peft_config=None
     ):
         self.vlm_config = config
+        self._micro_step = 0
+        self._nan_detected = False
         
         # Initialize parent SFTTrainer
         super().__init__(
@@ -36,20 +38,51 @@ class VLMTrainer(SFTTrainer):
         )
         
     def training_step(self, model, inputs, num_items_in_batch=None):
-        """Override training_step to aggressively clear CUDA cache before each step.
-        
-        This is needed because the model + activations + gradients consume nearly
-        all GPU memory, leaving no room for the next batch's pixel_values to be
-        transferred to GPU.
-        """
+        """Override training_step with NaN gradient detection."""
         # Aggressive memory cleanup before processing
         gc.collect()
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
             torch.cuda.synchronize()
         
-        # Call parent training_step
-        return super().training_step(model, inputs, num_items_in_batch)
+        self._micro_step += 1
+        
+        # Call parent training_step (forward + backward)
+        loss = super().training_step(model, inputs, num_items_in_batch)
+        
+        # Check gradient health after EVERY micro-batch backward (only report first time)
+        if not self._nan_detected:
+            nan_grad_groups = {}
+            for name, p in model.named_parameters():
+                if p.requires_grad and p.grad is not None and torch.isnan(p.grad).any():
+                    # Group by model component
+                    for key in ["vision_tower", "language_model", "action_head", 
+                                "flex_scene_encoder", "projector", "embed_tokens", "lm_head"]:
+                        if key in name:
+                            group = key
+                            break
+                    else:
+                        group = "other"
+                    
+                    if group not in nan_grad_groups:
+                        nan_grad_groups[group] = []
+                    nan_grad_groups[group].append(name)
+            
+            if nan_grad_groups:
+                self._nan_detected = True
+                step = getattr(self.state, 'global_step', '?')
+                print(f"\n🔴 NaN gradients first detected at micro_step={self._micro_step}, global_step={step}")
+                for group, params in sorted(nan_grad_groups.items()):
+                    print(f"  [{group}] {len(params)} params with NaN grads (first: {params[0]})")
+                
+                # Check which weights are already NaN
+                nan_weights = [n for n, p in model.named_parameters() if torch.isnan(p.data).any()]
+                if nan_weights:
+                    print(f"  💀 {len(nan_weights)} params have NaN weights already")
+                else:
+                    print(f"  ✅ All weights still finite — NaN is only in gradients from this backward pass")
+        
+        return loss
         
     def save_model(self, output_dir=None, _internal_call=False):
         """Override save_model to also save our custom config."""
@@ -59,4 +92,3 @@ class VLMTrainer(SFTTrainer):
         # Save our custom config to the output directory
         config_path = os.path.join(output_dir, "vlm_config.yaml")
         save_config(self.vlm_config, config_path)
-
