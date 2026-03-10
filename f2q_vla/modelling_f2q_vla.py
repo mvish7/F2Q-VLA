@@ -243,7 +243,7 @@ class F2QVLAForConditionalGeneration(F2QVLAPretrainedModel, GenerationMixin, Tra
             image_mask = self.get_placeholder_mask(
                 input_ids, inputs_embeds=inputs_embeds, image_features=image_embeds
             )
-            inputs_embeds = inputs_embeds.masked_scatter(image_mask, image_embeds)
+            inputs_embeds = inputs_embeds.masked_scatter(image_mask, image_embeds.to(inputs_embeds.dtype))
         else:
             image_embeds = None
 
@@ -310,6 +310,7 @@ class F2QVLAForConditionalGeneration(F2QVLAPretrainedModel, GenerationMixin, Tra
                 target_rot=ego_future_rot
             )
             loss = loss_output.total_loss
+
 
         return F2QVLAOutputWithPast(
             loss=loss,

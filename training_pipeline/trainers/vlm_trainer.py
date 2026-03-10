@@ -23,8 +23,6 @@ class VLMTrainer(SFTTrainer):
         peft_config=None
     ):
         self.vlm_config = config
-        self._micro_step = 0
-        self._nan_detected = False
         
         # Initialize parent SFTTrainer
         super().__init__(
@@ -45,42 +43,8 @@ class VLMTrainer(SFTTrainer):
             torch.cuda.empty_cache()
             torch.cuda.synchronize()
         
-        self._micro_step += 1
-        
         # Call parent training_step (forward + backward)
         loss = super().training_step(model, inputs, num_items_in_batch)
-        
-        # Check gradient health after EVERY micro-batch backward (only report first time)
-        if not self._nan_detected:
-            nan_grad_groups = {}
-            for name, p in model.named_parameters():
-                if p.requires_grad and p.grad is not None and torch.isnan(p.grad).any():
-                    # Group by model component
-                    for key in ["vision_tower", "language_model", "action_head", 
-                                "flex_scene_encoder", "projector", "embed_tokens", "lm_head"]:
-                        if key in name:
-                            group = key
-                            break
-                    else:
-                        group = "other"
-                    
-                    if group not in nan_grad_groups:
-                        nan_grad_groups[group] = []
-                    nan_grad_groups[group].append(name)
-            
-            if nan_grad_groups:
-                self._nan_detected = True
-                step = getattr(self.state, 'global_step', '?')
-                print(f"\n🔴 NaN gradients first detected at micro_step={self._micro_step}, global_step={step}")
-                for group, params in sorted(nan_grad_groups.items()):
-                    print(f"  [{group}] {len(params)} params with NaN grads (first: {params[0]})")
-                
-                # Check which weights are already NaN
-                nan_weights = [n for n, p in model.named_parameters() if torch.isnan(p.data).any()]
-                if nan_weights:
-                    print(f"  💀 {len(nan_weights)} params have NaN weights already")
-                else:
-                    print(f"  ✅ All weights still finite — NaN is only in gradients from this backward pass")
         
         return loss
         
