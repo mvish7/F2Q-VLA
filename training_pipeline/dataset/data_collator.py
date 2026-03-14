@@ -69,7 +69,7 @@ class DataCollator:
             images=flat_images if flat_images else None, 
             return_tensors="pt", 
             padding=True,
-            crop_size={"height": self.config.image_size_height, "width": self.config.image_size_width}
+            size={"height": self.config.image_size_height, "width": self.config.image_size_width}
         )
         
         # Close PIL images to free memory immediately after processing
