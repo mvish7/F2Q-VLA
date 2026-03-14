@@ -1,6 +1,6 @@
 model:
-  model_path: "/media/vishal/workspace/projects/VLA/modality_alignment/f2q_vla_artifacts"
-  type: "f2q_vla"
+  model_path: "/media/vishal/workspace/projects/VLA/modality_alignment/dfq_vla_artifacts"
+  type: "dfq_vla"
   freeze_vision_tower: true
   freeze_llm: true
   freeze_projector: false

@@ -70,7 +70,7 @@ def format_data(sample: Dict[str, Any], system_message: str = DEFAULT_SYSTEM_MES
         },
     ]
 
-# Trajectory tokens (mirrored from f2q_vla/traj_utils.py to avoid circular imports if needed, 
+# Trajectory tokens (mirrored from dfq_vla/traj_utils.py to avoid circular imports if needed, 
 # or we can import if the package is installed. For safety in this script, defining here.)
 TRAJ_TOKEN = {
     "history": "<|traj_history|>",
@@ -79,7 +79,7 @@ TRAJ_TOKEN = {
 }
 
 def format_vla_data(sample: Dict[str, Any], use_flex: bool = False) -> List[Dict[str, Any]]:
-    """Format a VLA sample into a conversation list for F2Q VLA.
+    """Format a VLA sample into a conversation list for DFQ VLA.
     
     Args:
         sample: Raw dataset sample.

@@ -7,7 +7,7 @@ class ModelConfig:
     processor_path: Optional[str] = None
     torch_dtype: str = "bfloat16"
     attn_implementation: str = "flash_attention_2"
-    type: str = "f2q_vla"
+    type: str = "dfq_vla"
     
     # Freezing configuration
     freeze_vision_tower: bool = True

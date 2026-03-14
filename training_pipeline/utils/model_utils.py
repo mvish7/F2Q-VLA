@@ -3,29 +3,29 @@ from transformers import AutoConfig, AutoModelForCausalLM, AutoProcessor, BitsAn
 from peft import LoraConfig, get_peft_model, prepare_model_for_kbit_training
 from typing import Tuple, Any
 
-# Import F2Q_VLA components
+# Import DFQ_VLA components
 # Assuming these are available in the python path as top-level modules
 try:
-    from f2q_vla.configuration_f2q_vla import F2QVLAConfig
-    from f2q_vla.modelling_f2q_vla import F2QVLAForConditionalGeneration
-    from f2q_vla.processing_f2q_vla import F2QVLAProcessor
+    from dfq_vla.configuration_dfq_vla import DFQVLAConfig
+    from dfq_vla.modelling_dfq_vla import DFQVLAForConditionalGeneration
+    from dfq_vla.processing_dfq_vla import DFQVLAProcessor
 except ImportError:
     # Fallback or strict error depending on environment
-    print("Warning: Could not import f2q_vla modules directly. Ensure they are in PYTHONPATH.")
-    F2QVLAConfig = None
-    F2QVLAForConditionalGeneration = None
-    F2QVLAProcessor = None
+    print("Warning: Could not import dfq_vla modules directly. Ensure they are in PYTHONPATH.")
+    DFQVLAConfig = None
+    DFQVLAForConditionalGeneration = None
+    DFQVLAProcessor = None
 
-def register_f2q_vla():
-    """Register the F2Q VLA model with Auto classes."""
-    if F2QVLAConfig:
-        AutoConfig.register("f2q_vla", F2QVLAConfig)
-        AutoModelForCausalLM.register(F2QVLAConfig, F2QVLAForConditionalGeneration)
-        AutoProcessor.register(F2QVLAConfig, F2QVLAProcessor)
+def register_dfq_vla():
+    """Register the DFQ VLA model with Auto classes."""
+    if DFQVLAConfig:
+        AutoConfig.register("dfq_vla", DFQVLAConfig)
+        AutoModelForCausalLM.register(DFQVLAConfig, DFQVLAForConditionalGeneration)
+        AutoProcessor.register(DFQVLAConfig, DFQVLAProcessor)
 
 def load_model_and_processor(config) -> Tuple[Any, Any]:
     """Load model and processor based on configuration."""
-    register_f2q_vla()
+    register_dfq_vla()
     
     # Load processor
     processor_path = config.model.processor_path or config.model.model_path
@@ -39,7 +39,7 @@ def load_model_and_processor(config) -> Tuple[Any, Any]:
     if config.qlora and config.qlora.enabled:
         compute_dtype = getattr(torch, config.qlora.bnb_4bit_compute_dtype, torch.bfloat16)
         # Skip modules that are not compatible with 4-bit quantization
-        # These are custom modules in F2Q_VLA that should not be quantized
+        # These are custom modules in DFQ_VLA that should not be quantized
         skip_modules = [
             "vision_tower",      # DinoV3 vision encoder
             "projector",         # Vision-to-LM projector
@@ -83,16 +83,16 @@ def load_model_and_processor(config) -> Tuple[Any, Any]:
         print(f"Synced processor flex encoder settings: use_flex_scene_encoder={processor.use_flex_scene_encoder}, num_scene_tokens={processor.num_scene_tokens}")
 
     # Resize token embeddings to match tokenizer
-    # unique to F2Q VLA: we add trajectory tokens to the tokenizer in the processor
+    # unique to DFQ VLA: we add trajectory tokens to the tokenizer in the processor
     # so we must resize the model embeddings to accommodate them
     model.resize_token_embeddings(len(processor.tokenizer))
     
     # Sync loss weights from training config to model's loss calculator
-    # The model's F2QVLAConfig (loaded from pretrained) may not have loss_weights,
+    # The model's DFQVLAConfig (loaded from pretrained) may not have loss_weights,
     # so we override from the training pipeline config
     if hasattr(config.model, 'loss_weights') and config.model.loss_weights:
-        from f2q_vla.loss import F2QVLALoss
-        model.loss_calculator = F2QVLALoss(config.model.loss_weights)
+        from dfq_vla.loss import DFQVLALoss
+        model.loss_calculator = DFQVLALoss(config.model.loss_weights)
         print(f"Applied loss weights from training config: {config.model.loss_weights}")
     
     return model, processor
@@ -194,7 +194,7 @@ def setup_lora(model, lora_config):
     return model
 
 def print_model_parameters(model):
-    """Print the number of parameters in each block of the F2Q VLA model."""
+    """Print the number of parameters in each block of the DFQ VLA model."""
     print("=== Model Parameter Breakdown ===")
     blocks = {
         "Vision Tower": 0,
