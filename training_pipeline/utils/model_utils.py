@@ -192,3 +192,51 @@ def setup_lora(model, lora_config):
     model = get_peft_model(model, peft_config)
     model.print_trainable_parameters()
     return model
+
+def print_model_parameters(model):
+    """Print the number of parameters in each block of the F2Q VLA model."""
+    print("=== Model Parameter Breakdown ===")
+    blocks = {
+        "Vision Tower": 0,
+        "Flex Scene Encoder": 0,
+        "Projector": 0,
+        "Language Model": 0,
+        "LM Head": 0,
+        "Action Head": 0,
+        "Other": 0
+    }
+    trainable_blocks = {k: 0 for k in blocks.keys()}
+    
+    for name, param in model.named_parameters():
+        num_params = param.numel()
+        is_trainable = param.requires_grad
+        
+        if "vision_tower" in name:
+            key = "Vision Tower"
+        elif "flex_scene_encoder" in name:
+            key = "Flex Scene Encoder"
+        elif "projector" in name:
+            key = "Projector"
+        elif "language_model" in name:
+            key = "Language Model"
+        elif "lm_head" in name:
+            key = "LM Head"
+        elif "action_head" in name:
+            key = "Action Head"
+        else:
+            key = "Other"
+            
+        blocks[key] += num_params
+        if is_trainable:
+            trainable_blocks[key] += num_params
+            
+    total_params = sum(blocks.values())
+    total_trainable = sum(trainable_blocks.values())
+    
+    for key in blocks.keys():
+        if blocks[key] > 0:
+            print(f"{key:<20} | Total: {blocks[key]:>14,} | Trainable: {trainable_blocks[key]:>14,}")
+            
+    print("-" * 55)
+    print(f"{'Total':<20} | Total: {total_params:>14,} | Trainable: {total_trainable:>14,}")
+    print("=================================")

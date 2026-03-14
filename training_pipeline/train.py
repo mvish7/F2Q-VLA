@@ -4,7 +4,7 @@ import torch
 
 
 from training_pipeline.configs import load_config, get_training_args
-from training_pipeline.utils import load_model_and_processor, apply_freezing, setup_lora
+from training_pipeline.utils import load_model_and_processor, apply_freezing, setup_lora, print_model_parameters
 from training_pipeline.dataset import DatasetLoader
 from training_pipeline.trainers import VLMTrainer
 
@@ -55,6 +55,9 @@ def main():
         peft_config=None # We applied PEFT manually if needed
     )
     
+    # Print parameter counts per block
+    print_model_parameters(model)
+
     # Train
     print("Starting training...")
     trainer.train()
