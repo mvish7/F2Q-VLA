@@ -31,6 +31,10 @@ def get_training_args(config: VLMTrainingConfig, data_collator: Any) -> SFTConfi
         max_grad_norm=config.training.max_grad_norm,
         warmup_ratio=config.training.warmup_ratio,
         gradient_checkpointing=config.training.gradient_checkpointing,
+        # use_reentrant=False is required when gradient checkpointing with frozen modules.
+        # The default (use_reentrant=True) produces None gradients when layer inputs
+        # don't have requires_grad=True, which breaks training with frozen LLM.
+        gradient_checkpointing_kwargs={"use_reentrant": False} if config.training.gradient_checkpointing else None,
         dataloader_num_workers=config.data.dataloader_num_workers,
         dataloader_pin_memory=config.data.dataloader_pin_memory,
         # prefetch_factor must be None when num_workers=0

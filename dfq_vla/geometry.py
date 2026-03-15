@@ -1,4 +1,4 @@
-"""Geometry utilities for F2Q VLA.
+"""Geometry utilities for DFQ VLA.
 
 This module provides rotation matrix conversion functions.
 """
@@ -23,13 +23,13 @@ def compute_rotation_matrix_from_ortho6d(ortho6d: torch.Tensor) -> torch.Tensor:
     x_raw = ortho6d[..., :3]  # First column
     y_raw = ortho6d[..., 3:6]  # Second column hint
     
-    # Normalize first column
-    x = F.normalize(x_raw, dim=-1)
+    # Normalize first column (eps for bf16 safety with random init)
+    x = F.normalize(x_raw, dim=-1, eps=1e-6)
     
     # Gram-Schmidt: make y orthogonal to x
     dot = (x * y_raw).sum(dim=-1, keepdim=True)
     y = y_raw - dot * x
-    y = F.normalize(y, dim=-1)
+    y = F.normalize(y, dim=-1, eps=1e-6)
     
     # Cross product for third column
     z = torch.cross(x, y, dim=-1)

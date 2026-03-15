@@ -1,4 +1,4 @@
-"""Trajectory utility functions for F2Q VLA.
+"""Trajectory utility functions for DFQ VLA.
 
 This module provides utility functions for:
 - Creating VLA messages with trajectory placeholders
@@ -143,7 +143,7 @@ def replace_pad_token(
 class TrajectoryFusionMixin:
     """Mixin class providing trajectory fusion functionality.
     
-    This mixin should be used with F2QVLAForConditionalGeneration to add
+    This mixin should be used with DFQVLAForConditionalGeneration to add
     trajectory encoding and fusion capabilities.
     """
 

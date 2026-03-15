@@ -1,6 +1,6 @@
-"""Loss functions for F2Q VLA model.
+"""Loss functions for DFQ VLA model.
 
-This module provides the loss calculation logic for the F2Q VLA model,
+This module provides the loss calculation logic for the DFQ VLA model,
 including Geodesic Loss for rotation matrices and a composite loss class.
 """
 
@@ -10,15 +10,15 @@ from dataclasses import dataclass
 from typing import Dict, Optional, Tuple
 
 @dataclass
-class F2QVLALossOutput:
-    """Output for F2QVLALoss."""
+class DFQVLALossOutput:
+    """Output for DFQVLALoss."""
     total_loss: torch.Tensor
     text_loss: Optional[torch.Tensor] = None
     xyz_loss: Optional[torch.Tensor] = None
     rot_loss: Optional[torch.Tensor] = None
 
 
-def compute_geodesic_loss(pred_rot: torch.Tensor, target_rot: torch.Tensor, eps: float = 1e-7) -> torch.Tensor:
+def compute_geodesic_loss(pred_rot: torch.Tensor, target_rot: torch.Tensor, eps: float = 1e-3) -> torch.Tensor:
     """Compute Geodesic Loss between two batches of rotation matrices.
     
     Geodesic distance is defined as:
@@ -27,21 +27,23 @@ def compute_geodesic_loss(pred_rot: torch.Tensor, target_rot: torch.Tensor, eps:
     Args:
         pred_rot: Predicted rotation matrices of shape (..., 3, 3)
         target_rot: Target rotation matrices of shape (..., 3, 3)
-        eps: Small epsilon for numerical stability in acos
+        eps: Epsilon for numerical stability in acos. Must be large enough
+             for the training dtype (e.g. 1e-3 for bf16, 1e-7 for fp32).
         
     Returns:
-        Loss tensor of shape (...)
+        Loss tensor (scalar).
     """
+    # Compute in float32 to avoid bf16 precision issues with acos gradient
+    pred_f32 = pred_rot.float()
+    target_f32 = target_rot.float()
+    
     # Calculate R_pred^T * R_target
-    # shape: (..., 3, 3)
-    m = torch.matmul(pred_rot.transpose(-1, -2), target_rot)
+    m = torch.matmul(pred_f32.transpose(-1, -2), target_f32)
     
     # Compute trace: sum of diagonal elements
-    # shape: (...)
     trace = m[..., 0, 0] + m[..., 1, 1] + m[..., 2, 2]
     
     # Clamp for numerical stability before acos
-    # The argument for acos must be in [-1, 1]
     # (Trace of 3x3 rotation matrix is 1 + 2cos(theta), so (trace-1)/2 is cos(theta))
     cos_theta = (trace - 1) / 2
     cos_theta = torch.clamp(cos_theta, -1.0 + eps, 1.0 - eps)
@@ -49,11 +51,11 @@ def compute_geodesic_loss(pred_rot: torch.Tensor, target_rot: torch.Tensor, eps:
     # Compute angle
     theta = torch.acos(cos_theta)
     
-    return theta.mean()
+    return theta.mean().to(pred_rot.dtype)
 
 
-class F2QVLALoss(nn.Module):
-    """Loss calculator for F2Q VLA."""
+class DFQVLALoss(nn.Module):
+    """Loss calculator for DFQ VLA."""
     
     def __init__(self, loss_weights: Dict[str, float] = None):
         super().__init__()
@@ -71,7 +73,7 @@ class F2QVLALoss(nn.Module):
         target_xyz: Optional[torch.Tensor],
         pred_rot: Optional[torch.Tensor],
         target_rot: Optional[torch.Tensor],
-    ) -> F2QVLALossOutput:
+    ) -> DFQVLALossOutput:
         """Compute total loss.
         
         Args:
@@ -82,7 +84,7 @@ class F2QVLALoss(nn.Module):
             target_rot: Target rotation matrices
             
         Returns:
-            F2QVLALossOutput containing total and individual losses
+            DFQVLALossOutput containing total and individual losses
         """
         combined_loss = 0.0
         losses = {}
@@ -116,7 +118,7 @@ class F2QVLALoss(nn.Module):
             combined_loss += self.loss_weights.get("rot", 1.0) * rot_loss
             losses["rot_loss"] = rot_loss
             
-        return F2QVLALossOutput(
+        return DFQVLALossOutput(
             total_loss=combined_loss,
             text_loss=losses.get("text_loss"),
             xyz_loss=losses.get("xyz_loss"),

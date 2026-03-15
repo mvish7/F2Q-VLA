@@ -1,4 +1,4 @@
-"""Action Chunking Head for F2Q VLA.
+"""Action Chunking Head for DFQ VLA.
 
 This module provides the ActionChunkingHead for future trajectory prediction.
 Uses a standard PyTorch TransformerDecoder architecture.
@@ -7,7 +7,7 @@ Uses a standard PyTorch TransformerDecoder architecture.
 import torch
 import torch.nn as nn
 
-from f2q_vla.geometry import compute_rotation_matrix_from_ortho6d
+from dfq_vla.geometry import compute_rotation_matrix_from_ortho6d
 
 
 class ActionChunkingHead(nn.Module):
@@ -119,7 +119,7 @@ def create_action_head(config) -> ActionChunkingHead:
     """Factory function to create ActionChunkingHead from config.
     
     Args:
-        config: F2QVLAConfig with action head parameters.
+        config: DFQVLAConfig with action head parameters.
         
     Returns:
         Initialized ActionChunkingHead.

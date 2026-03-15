@@ -1,6 +1,6 @@
 model:
-  model_path: "/media/vishal/workspace/projects/VLA/f2q_checkpoints/local_densecaption_400k_merged"
-  type: "f2q_vla"
+  model_path: "/media/vishal/workspace/projects/VLA/dfq_checkpoints/local_densecaption_400k_merged"
+  type: "dfq_vla"
   freeze_vision_tower: true
   freeze_llm: false
   freeze_projector: false

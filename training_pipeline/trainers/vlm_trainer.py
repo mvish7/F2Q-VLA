@@ -36,20 +36,17 @@ class VLMTrainer(SFTTrainer):
         )
         
     def training_step(self, model, inputs, num_items_in_batch=None):
-        """Override training_step to aggressively clear CUDA cache before each step.
-        
-        This is needed because the model + activations + gradients consume nearly
-        all GPU memory, leaving no room for the next batch's pixel_values to be
-        transferred to GPU.
-        """
+        """Override training_step with NaN gradient detection."""
         # Aggressive memory cleanup before processing
         gc.collect()
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
             torch.cuda.synchronize()
         
-        # Call parent training_step
-        return super().training_step(model, inputs, num_items_in_batch)
+        # Call parent training_step (forward + backward)
+        loss = super().training_step(model, inputs, num_items_in_batch)
+        
+        return loss
         
     def save_model(self, output_dir=None, _internal_call=False):
         """Override save_model to also save our custom config."""
@@ -59,4 +56,3 @@ class VLMTrainer(SFTTrainer):
         # Save our custom config to the output directory
         config_path = os.path.join(output_dir, "vlm_config.yaml")
         save_config(self.vlm_config, config_path)
-

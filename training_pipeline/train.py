@@ -4,7 +4,7 @@ import torch
 
 
 from training_pipeline.configs import load_config, get_training_args
-from training_pipeline.utils import load_model_and_processor, apply_freezing, setup_lora
+from training_pipeline.utils import load_model_and_processor, apply_freezing, setup_lora, print_model_parameters
 from training_pipeline.dataset import DatasetLoader
 from training_pipeline.trainers import VLMTrainer
 
@@ -30,6 +30,10 @@ def main():
         print("Setting up LoRA adapters...")
         model = setup_lora(model, config.lora)
     
+    # Enable input require grads AFTER LoRA setup so the hook survives PEFT wrapping.
+    # This is needed for gradient checkpointing to work with frozen modules (e.g. LLM).
+    model.enable_input_require_grads()
+    
     # Load and Prepare Dataset
     print("Loading dataset...")
     dataset_loader = DatasetLoader(config.data, processor)
@@ -51,6 +55,9 @@ def main():
         peft_config=None # We applied PEFT manually if needed
     )
     
+    # Print parameter counts per block
+    print_model_parameters(model)
+
     # Train
     print("Starting training...")
     trainer.train()

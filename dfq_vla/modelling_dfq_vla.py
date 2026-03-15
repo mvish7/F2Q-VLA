@@ -13,22 +13,19 @@ from transformers.cache_utils import Cache
 from transformers.processing_utils import Unpack
 from transformers.utils import TransformersKwargs
 from transformers.modeling_outputs import ModelOutput
-from f2q_vla.configuration_f2q_vla import F2QVLAConfig
-from f2q_vla.delta_tokenizer import DeltaTrajectoryTokenizer
-from f2q_vla.traj_utils import TrajectoryFusionMixin
-from f2q_vla.action_head import ActionChunkingHead
-from f2q_vla.flex_scene_encoder import FlexSceneEncoder, create_flex_scene_encoder
-from f2q_vla.loss import F2QVLALoss
+from dfq_vla.configuration_dfq_vla import DFQVLAConfig
+from dfq_vla.delta_tokenizer import DeltaTrajectoryTokenizer
+from dfq_vla.traj_utils import TrajectoryFusionMixin
+from dfq_vla.action_head import ActionChunkingHead
+from dfq_vla.flex_scene_encoder import FlexSceneEncoder, create_flex_scene_encoder
+from dfq_vla.loss import DFQVLALoss
 
 
-VISION_MODEL_ID = "kevin510/fast-vit-hd"
-
-
-class F2QVLAProjector(nn.Module):
+class DFQVLAProjector(nn.Module):
     def __init__(self, config):
         super().__init__()
-        # FastViT hidden size (3072) -> Qwen hidden size (1024)
-        self.linear_1 = nn.Linear(config.vision_hidden_size, config.text_config.hidden_size, bias=False)
+        # DinoV3 hidden size -> Qwen hidden size
+        self.linear_1 = nn.Linear(config.vision_config.hidden_size, config.text_config.hidden_size, bias=False)
         self.act = nn.GELU()
         self.linear_2 = nn.Linear(config.text_config.hidden_size, config.text_config.hidden_size, bias=False)
 
@@ -39,7 +36,7 @@ class F2QVLAProjector(nn.Module):
         return hidden_states
 
 @dataclass
-class F2QVLAOutputWithPast(ModelOutput):
+class DFQVLAOutputWithPast(ModelOutput):
     r"""
     loss (`torch.FloatTensor` of shape `(1,)`, *optional*, returned when `labels` is provided):
         Language modeling loss (for next-token prediction).
@@ -62,8 +59,8 @@ class F2QVLAOutputWithPast(ModelOutput):
     rope_deltas: Optional[torch.LongTensor] = None
 
 
-class F2QVLAPretrainedModel(PreTrainedModel):
-    config: F2QVLAConfig
+class DFQVLAPretrainedModel(PreTrainedModel):
+    config: DFQVLAConfig
     base_model_prefix = "model"
     supports_gradient_checkpointing = True
     _no_split_modules = []
@@ -76,10 +73,10 @@ class F2QVLAPretrainedModel(PreTrainedModel):
     _can_record_outputs = {}
 
 
-class F2QVLAForConditionalGeneration(F2QVLAPretrainedModel, GenerationMixin, TrajectoryFusionMixin):
+class DFQVLAForConditionalGeneration(DFQVLAPretrainedModel, GenerationMixin, TrajectoryFusionMixin):
     _checkpoint_conversion_mapping = {}
     _tied_weights_keys = ["lm_head.weight"]
-    config_class = F2QVLAConfig
+    config_class = DFQVLAConfig
     accepts_loss_kwargs = False
     _supports_flash_attn_2 = True
 
@@ -87,15 +84,15 @@ class F2QVLAForConditionalGeneration(F2QVLAPretrainedModel, GenerationMixin, Tra
         super().__init__(config)
         self.config = config
 
-        # 1. Load Vision Encoder (FastViT-HD)
+        # 1. Load Vision Encoder (DINOv3)
         # We use from_config to initialize empty structure, weights loaded later
-        self.vision_tower = AutoModel.from_config(config.vision_config, trust_remote_code=True)
+        self.vision_tower = AutoModel.from_config(config.vision_config)
 
         # 2. Load LLM (Qwen3)
         self.language_model = AutoModel.from_config(config.text_config)
 
         # 3. Projector (3072 -> 1024)
-        self.projector = F2QVLAProjector(config)
+        self.projector = DFQVLAProjector(config)
 
         # LM head
         self.lm_head = nn.Linear(config.text_config.hidden_size, config.text_config.vocab_size, bias=False)
@@ -108,7 +105,7 @@ class F2QVLAForConditionalGeneration(F2QVLAPretrainedModel, GenerationMixin, Tra
         
         # 6. Initialize Loss Calculator
         loss_weights = getattr(config, "loss_weights", None)
-        self.loss_calculator = F2QVLALoss(loss_weights)
+        self.loss_calculator = DFQVLALoss(loss_weights)
         
         # 7. Initialize Flex Scene Encoder (optional)
         self._initialize_flex_scene_encoder(config)
@@ -217,10 +214,11 @@ class F2QVLAForConditionalGeneration(F2QVLAPretrainedModel, GenerationMixin, Tra
 
         # 1. Extract Image Features
         if pixel_values is not None:
-            # FastViT forward pass - returns (B*num_images, num_patches, 3072)
+            # DINOv3 forward pass - returns last_hidden_state (B*num_images, seq_len, hidden)
             # Use embedding layer dtype to ensure compatibility with QLoRA/mixed precision
             target_dtype = self.get_input_embeddings().weight.dtype
-            image_embeds = self.vision_tower.forward_images(pixel_values).to(target_dtype)
+            vision_outputs = self.vision_tower(pixel_values.to(target_dtype), output_hidden_states=True)
+            image_embeds = vision_outputs.last_hidden_state
             
             # 2. Flex Scene Encoding (if enabled)
             if self.flex_scene_encoder is not None and camera_ids is not None:
@@ -239,13 +237,13 @@ class F2QVLAForConditionalGeneration(F2QVLAPretrainedModel, GenerationMixin, Tra
                     timestamp_ids.to(image_embeds.device)
                 )
 
-            # Project to LLM space (3072 -> 1024)
+            # Project to LLM space
             image_embeds = self.projector(image_embeds)
 
             image_mask = self.get_placeholder_mask(
                 input_ids, inputs_embeds=inputs_embeds, image_features=image_embeds
             )
-            inputs_embeds = inputs_embeds.masked_scatter(image_mask, image_embeds)
+            inputs_embeds = inputs_embeds.masked_scatter(image_mask, image_embeds.to(inputs_embeds.dtype))
         else:
             image_embeds = None
 
@@ -313,7 +311,8 @@ class F2QVLAForConditionalGeneration(F2QVLAPretrainedModel, GenerationMixin, Tra
             )
             loss = loss_output.total_loss
 
-        return F2QVLAOutputWithPast(
+
+        return DFQVLAOutputWithPast(
             loss=loss,
             logits=logits,
             past_key_values=outputs.past_key_values,
@@ -385,5 +384,5 @@ class F2QVLAForConditionalGeneration(F2QVLAPretrainedModel, GenerationMixin, Tra
 
 
 __all__ = [
-    "F2QVLAForConditionalGeneration"
+    "DFQVLAForConditionalGeneration"
 ]

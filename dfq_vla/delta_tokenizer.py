@@ -1,4 +1,4 @@
-"""Delta trajectory tokenizer for F2Q VLA.
+"""Delta trajectory tokenizer for DFQ VLA.
 
 This module provides trajectory tokenization functionality, adapted from alpamayo_r1.
 The tokenizer encodes trajectory waypoints as discrete tokens using delta encoding.

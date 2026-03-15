@@ -27,13 +27,13 @@ class FlexSceneEncoder(nn.Module):
     
     def __init__(
         self,
-        vision_hidden_size: int = 3072,
-        num_scene_tokens: int = 800,
+        vision_hidden_size: int,
+        num_scene_tokens: int = 900,
         num_cameras: int = 4,
         num_timestamps: int = 4,
         num_layers: int = 6,
         num_heads: int = 12,
-        dim_feedforward: int = 4096,
+        dim_feedforward: int = 3072,
         dropout: float = 0.1,
         gradient_checkpointing: bool = True,  # Default to True for memory efficiency
     ):
@@ -200,7 +200,7 @@ def create_flex_scene_encoder(config) -> FlexSceneEncoder:
     """Factory function to create FlexSceneEncoder from config.
     
     Args:
-        config: F2QVLAConfig with flex encoder parameters.
+        config: DFQVLAConfig with flex encoder parameters.
         
     Returns:
         Initialized FlexSceneEncoder.

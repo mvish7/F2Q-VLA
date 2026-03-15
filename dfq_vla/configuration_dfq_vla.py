@@ -1,14 +1,14 @@
-import torch
 from transformers import AutoConfig
 from transformers.configuration_utils import PretrainedConfig
-from transformers import Qwen3Config
+from transformers import DINOv3ViTConfig, Qwen3Config
 
 
-VISION_MODEL_ID = "kevin510/fast-vit-hd"
+VISION_MODEL_ID = "facebook/dinov3-vitb16-pretrain-lvd1689m"
 
 
-class F2QVLAConfig(PretrainedConfig):
-    model_type = "f2q_vla"
+class DFQVLAConfig(PretrainedConfig):
+    model_type = "dfq_vla"
+    sub_configs = {"vision_config": DINOv3ViTConfig, "text_config": Qwen3Config}
     
     def __init__(
             self,
@@ -50,15 +50,12 @@ class F2QVLAConfig(PretrainedConfig):
 
         # Initialize sub-configs
         if vision_config is None:
-            # Load FastViT config from HuggingFace Hub
-            self.vision_config = AutoConfig.from_pretrained(VISION_MODEL_ID, trust_remote_code=True)
+            # Defaults to DINOv3 ViT-B/16 config if not provided
+            self.vision_config = AutoConfig.from_pretrained(VISION_MODEL_ID)
         elif isinstance(vision_config, dict):
-            # Reconstruct from dict
-            self.vision_config = AutoConfig.from_pretrained(VISION_MODEL_ID, trust_remote_code=True, **vision_config)
+            self.vision_config = self.sub_configs["vision_config"](**vision_config)
         else:
             self.vision_config = vision_config
-
-        self.vision_config.dtype = torch.bfloat16
 
         if text_config is None:
             self.text_config = AutoConfig.from_pretrained("Qwen/Qwen3-0.6B")
@@ -68,14 +65,13 @@ class F2QVLAConfig(PretrainedConfig):
             self.text_config = text_config
 
         self.hidden_size = self.text_config.hidden_size
-        self.vision_hidden_size = self.vision_config.embed_dim  # 3072 for FastViT-HD
+        self.vision_hidden_size = self.vision_config.hidden_size  # e.g. 768 for DINOv3 ViT-B/16
         self.projector_hidden_act = projector_hidden_act
         self.ignore_index = ignore_index
         self.vocab_size = self.text_config.vocab_size
         self.image_token_id = image_token_id
         self.vision_start_token_id = vision_start_token_id
         self.vision_end_token_id = vision_end_token_id
-        self.patch_size = self.vision_config.patch_size  # 64 for FastViT-HD
         
         # Trajectory encoding config
         self.traj_vocab_size = traj_vocab_size
