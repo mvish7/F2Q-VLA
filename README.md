@@ -1,54 +1,23 @@
-# VLA
+# Dino-Flex-Qwen aka DFQ VLA
+
+DFQ is a ~1B parameter VLA that processes multi-camera, multi-timestamp images and acts as a policy for autonomous driving. It is
+built using [NVIDIA's PhysicalAI-Autonomous-Vehicles dataset](https://huggingface.co/datasets/nvidia/PhysicalAI-Autonomous-Vehicles) 
+
+## Model Architecture
+
+Key components of DFQ VLA are:
+
+* [DinoV3](https://huggingface.co/facebook/dinov3-vitb16-pretrain-lvd1689m) as vision encoder: Processes 16 images to output roughly 10k tokens
+* [Flex scene encoder](https://jiawei-yang.github.io/Flex/) encoder vision tokens into 900 scene tokens using joint self attention
+* [Qwen3-06.B LLM](https://huggingface.co/Qwen/Qwen3-0.6B) consumes vision tokens + trajectory history to produce 8 Meta actions 
+* Action chunking head consumes these meta actions + last hidden state of LLM to produce refined 64 xyz + 3x3 rotations
 
 
+![](model_arch.png)
 
-## Benchmarks
+## Current Status and ToDos:
 
-### Video benchmarks
-* Video-MME (w/o sub)
-* MVBench
-* MMBench-Video
-* MLVU
-
-### Multi-Image
-* BLINK
-* MuirBench
-* Mantis-Eval
-* MileBench
-* MIRB
-
-## Model Comparison
-
-Criteria: 
-* Parameters <= 2B (hard limit due to GPU VRAM)
-* Completely open model released in 2025 (for obvious reasons :))
-
-Following models are selected for comparisons.
-
-* Qwen3-vl-2B-Instruct
-* InternVL-3.5-2B
-* LFM2-1.6B
-* SmolVLM2 - 2.2B
-
-Metric score comparison on video understanding benchmarks:
-
-| Models/Benchmark | Qwen3-vl-2B-Instruct | InternVL-3.5-2B | LFM2-1.6B | SmolVLM2 - 2.2B|
-|----------|----------|----------|----------|------------|
-| Video-MME   | 61.9     | 58.4     | -     |     52.1       |
-| MVBench    | 61.7     | 65.9     | -     |      46.3      |
-| MMBench-Video    | -     | 1.56     | -     |-|
-| MLVU    | 68.3     | 64.4     | -     |55.2|
-| Video-MMMU    | 41.9     | -     | -     |-|
-| LVBench    | 47.4     | -     | -     |-|
-
-
-Metric score comparison on multi-image benchmarks:
-
-| Models/Benchmarks |Qwen3-vl-2B-Instruct | InternVL-3.5-2B | LFM2-1.6B | SmolVLM2 - 2.2B|
-|----------|----------|----------|----------|------------|
-| BLINK    | 53.8     | 51.3     | 44.50     |-|
-| MuirBench    | 47.4     | 44.0     | -     |-|
-| MantisEval    | -     | 58.5     | -     |-|
-| MileBench    | -     | -     | -     |-|
-| MIRB    | -     | 45.9     | -     |-|
-
+- [ ] SFT: in progress
+- [ ] Behaviour tuning: ToDo
+- [ ] Integration with AlpaSim: ToDo
+- [ ] Checkpoints available on Hub: ToDo
