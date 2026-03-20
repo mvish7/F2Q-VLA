@@ -2,14 +2,14 @@
 
 This module provides utility functions for:
 - Creating VLA messages with trajectory placeholders
-- Tokenizing trajectory data
-- Fusing trajectory tokens with input IDs
+- Fusing trajectory embeddings with input embeddings
 """
 
 from typing import Any
 
-import einops
 import torch
+
+from dfq_vla.trajectory_projector import prepare_traj_input
 
 
 # Trajectory token constants (matching processor)
@@ -22,17 +22,15 @@ TRAJ_TOKEN = {
 
 def create_vla_message(
     frames: torch.Tensor,
-    num_traj_tokens: int = 48,
+    num_traj_tokens: int = 16,
     system_prompt: str = "You are a driving assistant that generates safe and accurate actions.",
     user_prompt: str = "output the chain-of-thought reasoning of the driving process, then output the future trajectory.",
 ) -> list[dict]:
     """Create a VLA message with image frames and trajectory placeholders.
     
-    Similar to alpamayo_r1's helper.create_message().
-    
     Args:
         frames: Image frames tensor of shape (N, C, H, W).
-        num_traj_tokens: Number of trajectory placeholder tokens (default 48 for 16 waypoints × 3 xyz).
+        num_traj_tokens: Number of trajectory placeholder tokens (default 16, one per waypoint).
         system_prompt: System message content.
         user_prompt: User prompt after trajectory placeholders.
     
@@ -80,112 +78,62 @@ def create_vla_message(
     ]
 
 
-def tokenize_history_trajectory(
-    tokenizer: Any,
-    traj_data: dict[str, Any],
-    start_idx: int = 0,
-) -> torch.Tensor:
-    """Tokenize the history trajectory.
-    
-    Args:
-        tokenizer: Trajectory tokenizer with encode method (DeltaTrajectoryTokenizer).
-        traj_data: Dict containing "ego_history_xyz" and "ego_history_rot".
-                   ego_history_xyz shape: (B, n_traj, T, 3)
-                   ego_history_rot shape: (B, n_traj, T, 3, 3)
-        start_idx: Start of token index for the history trajectory tokens.
-
-    Returns:
-        torch.Tensor: Tokenized trajectory indices of shape [B, n_traj * tokens_per_history_traj].
-    """
-    assert "ego_history_xyz" in traj_data
-    assert traj_data["ego_history_xyz"].ndim == 4, "ego_history_xyz must be 4D of [B, n_traj, T, 3]"
-
-    B = traj_data["ego_history_xyz"].shape[0]
-    hist_xyz = traj_data["ego_history_xyz"].flatten(start_dim=0, end_dim=1)
-    hist_rot = traj_data["ego_history_rot"].flatten(start_dim=0, end_dim=1)
-
-    # Encode history trajectory using delta tokenizer
-    # Note: hist_xyz is passed to fut_xyz as we're encoding the history itself
-    hist_idx = (
-        tokenizer.encode(
-            hist_xyz=hist_xyz[:, :1],
-            hist_rot=hist_rot[:, :1],
-            fut_xyz=hist_xyz,
-            fut_rot=hist_rot,
-        )
-        + start_idx
-    )  # [B*n_traj, tokens_per_history_traj]
-    
-    hist_idx = einops.rearrange(hist_idx, "(b n_traj) n -> b (n_traj n)", b=B)
-
-    return hist_idx
-
-
-def replace_pad_token(
-    input_ids: torch.Tensor,
-    new_ids: torch.Tensor,
-    pad_idx: int,
-) -> torch.Tensor:
-    """Replace pad tokens in input_ids with new token values.
-    
-    Args:
-        input_ids: Input token IDs of shape [B, L].
-        new_ids: New token IDs to insert of shape [B, N] where N is number of pad tokens.
-        pad_idx: The pad token ID to replace.
-    
-    Returns:
-        torch.Tensor: Modified input_ids with pad tokens replaced.
-    """
-    mask = input_ids == pad_idx
-    return input_ids.masked_scatter(mask, new_ids)
-
-
 class TrajectoryFusionMixin:
-    """Mixin class providing trajectory fusion functionality.
+    """Mixin class providing trajectory embedding fusion.
     
     This mixin should be used with DFQVLAForConditionalGeneration to add
-    trajectory encoding and fusion capabilities.
+    trajectory projection and embedding fusion capabilities.
     """
 
-    def fuse_traj_tokens(
+    def fuse_traj_embeddings(
         self,
         input_ids: torch.Tensor,
-        traj_data: dict[str, Any] | None = None,
+        inputs_embeds: torch.Tensor,
+        ego_history_xyz: torch.Tensor,
+        ego_history_rot: torch.Tensor,
     ) -> torch.Tensor:
-        """Fuse trajectory tokens into the input ids.
+        """Fuse projected trajectory embeddings into the input embeddings.
         
-        Replaces <|traj_history|> placeholder tokens with actual trajectory token IDs.
+        Projects raw trajectory data through TrajHistProjector and scatters
+        the resulting embeddings at <|traj_history|> placeholder positions,
+        similar to how image embeddings are fused.
 
         Args:
             input_ids: Input token IDs of shape [B, L].
-            traj_data: Dict containing ego_history_xyz, ego_history_rot.
+            inputs_embeds: Current input embeddings of shape [B, L, D].
+            ego_history_xyz: History positions of shape [B, T, 3].
+            ego_history_rot: History rotations of shape [B, T, 3, 3].
 
         Returns:
-            input_ids: Modified input_ids with trajectory tokens fused.
+            inputs_embeds: Modified embeddings with trajectory embeddings fused in.
         """
-        if (
-            traj_data is None
-            or traj_data.get("ego_history_xyz") is None
-            or traj_data.get("ego_history_rot") is None
-        ):
-            return input_ids
-
-        # Validate required attributes
-        if not hasattr(self, "hist_traj_tokenizer"):
-            raise AttributeError("TrajectoryFusionMixin requires 'hist_traj_tokenizer' attribute")
-        if not hasattr(self, "hist_token_start_idx"):
-            raise AttributeError("TrajectoryFusionMixin requires 'hist_token_start_idx' attribute")
+        if not hasattr(self, "traj_projector"):
+            raise AttributeError("TrajectoryFusionMixin requires 'traj_projector' attribute")
         if not hasattr(self.config, "traj_token_ids"):
             raise AttributeError("Config requires 'traj_token_ids' attribute")
 
-        # Tokenize history trajectory
-        hist_idx = tokenize_history_trajectory(
-            self.hist_traj_tokenizer, traj_data, self.hist_token_start_idx
+        # Get the trajectory history placeholder token ID
+        traj_history_token_id = self.config.traj_token_ids["history"]
+        
+        # Build mask for <|traj_history|> placeholder positions
+        traj_mask = input_ids == traj_history_token_id  # [B, L]
+        
+        if not traj_mask.any():
+            return inputs_embeds
+
+        # Prepare input: concatenate xyz + yaw → (B, T, 4)
+        traj_input = prepare_traj_input(
+            ego_history_xyz.to(inputs_embeds.dtype),
+            ego_history_rot.to(inputs_embeds.dtype),
         )
         
-        # Replace placeholder tokens with actual trajectory tokens
-        input_ids = replace_pad_token(
-            input_ids, hist_idx, self.config.traj_token_ids["history"]
+        # Project through MLP → (B, T, hidden_dim)
+        traj_embeds = self.traj_projector(traj_input)
+
+        # Scatter into inputs_embeds at placeholder positions
+        traj_mask_expanded = traj_mask.unsqueeze(-1).expand_as(inputs_embeds)
+        inputs_embeds = inputs_embeds.masked_scatter(
+            traj_mask_expanded, traj_embeds.to(inputs_embeds.dtype)
         )
 
-        return input_ids
+        return inputs_embeds

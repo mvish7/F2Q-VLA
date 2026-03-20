@@ -14,7 +14,7 @@ from transformers.processing_utils import Unpack
 from transformers.utils import TransformersKwargs
 from transformers.modeling_outputs import ModelOutput
 from dfq_vla.configuration_dfq_vla import DFQVLAConfig
-from dfq_vla.delta_tokenizer import DeltaTrajectoryTokenizer
+from dfq_vla.trajectory_projector import TrajHistProjector, prepare_traj_input
 from dfq_vla.traj_utils import TrajectoryFusionMixin
 from dfq_vla.action_head import ActionChunkingHead
 from dfq_vla.flex_scene_encoder import FlexSceneEncoder, create_flex_scene_encoder
@@ -97,8 +97,8 @@ class DFQVLAForConditionalGeneration(DFQVLAPretrainedModel, GenerationMixin, Tra
         # LM head
         self.lm_head = nn.Linear(config.text_config.hidden_size, config.text_config.vocab_size, bias=False)
         
-        # 4. Initialize trajectory tokenizer for history encoding
-        self._initialize_trajectory_tokenizer(config)
+        # 4. Initialize trajectory history projector
+        self._initialize_traj_projector(config)
         
         # 5. Initialize action head for future trajectory prediction
         self._initialize_action_head(config)
@@ -113,22 +113,13 @@ class DFQVLAForConditionalGeneration(DFQVLAPretrainedModel, GenerationMixin, Tra
         # 8. Tie weights if necessary (standard HF practice)
         self.post_init()
     
-    def _initialize_trajectory_tokenizer(self, config):
-        """Initialize trajectory tokenizer for history trajectory encoding."""
-        if config.hist_traj_tokenizer_cfg is not None:
-            # Use custom config if provided
-            self.hist_traj_tokenizer = DeltaTrajectoryTokenizer(**config.hist_traj_tokenizer_cfg)
-        else:
-            # Default configuration (matching alpamayo_r1)
-            self.hist_traj_tokenizer = DeltaTrajectoryTokenizer(
-                ego_xyz_min=(-4, -4, -10),
-                ego_xyz_max=(4, 4, 10),
-                num_bins=1000,
-                predict_yaw=False,
-            )
-        
-        # Set the start index for history trajectory tokens
-        self.hist_token_start_idx = config.traj_token_start_idx if config.traj_token_start_idx else 0
+    def _initialize_traj_projector(self, config):
+        """Initialize MLP projector for trajectory history encoding."""
+        traj_input_dim = getattr(config, "traj_input_dim", 4)
+        self.traj_projector = TrajHistProjector(
+            input_dim=traj_input_dim,
+            hidden_size=config.hidden_size,
+        )
     
     def _initialize_action_head(self, config):
         """Initialize action chunking head for future trajectory prediction."""
@@ -246,6 +237,17 @@ class DFQVLAForConditionalGeneration(DFQVLAPretrainedModel, GenerationMixin, Tra
             inputs_embeds = inputs_embeds.masked_scatter(image_mask, image_embeds.to(inputs_embeds.dtype))
         else:
             image_embeds = None
+
+        # 2b. Fuse Trajectory History Embeddings
+        ego_history_xyz = kwargs.get("ego_history_xyz")
+        ego_history_rot = kwargs.get("ego_history_rot")
+        if ego_history_xyz is not None and ego_history_rot is not None:
+            inputs_embeds = self.fuse_traj_embeddings(
+                input_ids=input_ids,
+                inputs_embeds=inputs_embeds,
+                ego_history_xyz=ego_history_xyz,
+                ego_history_rot=ego_history_rot,
+            )
 
         # 3. Pass to LLM with output_hidden_states and output_attentions
         outputs = self.language_model(

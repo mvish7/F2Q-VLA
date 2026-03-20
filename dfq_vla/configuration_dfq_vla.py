@@ -24,10 +24,10 @@ class DFQVLAConfig(PretrainedConfig):
             tie_word_embeddings=True,
             # Trajectory encoding config
             traj_vocab_size: int = 768,
-            tokens_per_history_traj: int = 48,  # 16 waypoints × 3 (xyz)
+            tokens_per_history_traj: int = 16,  # 16 waypoints, 1 embedding each
             traj_token_start_idx: int = None,  # Set during tokenizer init
             traj_token_ids: dict = None,  # Mapping for special tokens
-            hist_traj_tokenizer_cfg: dict = None,  # Config for history trajectory tokenizer
+            traj_input_dim: int = 4,  # Per-waypoint feature dim (xyz + yaw)
             # Action head config (for future trajectory prediction)
             num_action_queries: int = 64,  # Number of future waypoints
             num_action_layers: int = 4,  # Transformer decoder layers
@@ -78,7 +78,7 @@ class DFQVLAConfig(PretrainedConfig):
         self.tokens_per_history_traj = tokens_per_history_traj
         self.traj_token_start_idx = traj_token_start_idx
         self.traj_token_ids = traj_token_ids
-        self.hist_traj_tokenizer_cfg = hist_traj_tokenizer_cfg
+        self.traj_input_dim = traj_input_dim
         
         # Action head config
         self.num_action_queries = num_action_queries

@@ -123,8 +123,8 @@ def format_vla_data(sample: Dict[str, Any], use_flex: bool = False) -> List[Dict
                     })
     
     # b. Trajectory History Placeholder
-    # Default 48 tokens (16 steps * 3 dims)
-    num_traj_tokens = 48 
+    # Default 16 tokens (1 embedding per waypoint)
+    num_traj_tokens = 16
     hist_traj_placeholder = (
         f"{TRAJ_TOKEN['history_start']}"
         f"{TRAJ_TOKEN['history'] * num_traj_tokens}"

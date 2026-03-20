@@ -1,12 +1,10 @@
 from dfq_vla.configuration_dfq_vla import DFQVLAConfig
 from dfq_vla.modelling_dfq_vla import DFQVLAForConditionalGeneration, DFQVLAProjector, DFQVLAOutputWithPast
 from dfq_vla.processing_dfq_vla import DFQVLAProcessor
-from dfq_vla.delta_tokenizer import DeltaTrajectoryTokenizer
+from dfq_vla.trajectory_projector import TrajHistProjector, prepare_traj_input, extract_yaw_from_rot
 from dfq_vla.traj_utils import (
     TrajectoryFusionMixin,
     create_vla_message,
-    tokenize_history_trajectory,
-    replace_pad_token,
     TRAJ_TOKEN,
 )
 from dfq_vla.action_head import ActionChunkingHead, create_action_head
@@ -21,11 +19,11 @@ __all__ = [
     "DFQVLAProjector",
     "DFQVLAOutputWithPast",
     "DFQVLAProcessor",
-    "DeltaTrajectoryTokenizer",
+    "TrajHistProjector",
+    "prepare_traj_input",
+    "extract_yaw_from_rot",
     "TrajectoryFusionMixin",
     "create_vla_message",
-    "tokenize_history_trajectory",
-    "replace_pad_token",
     "TRAJ_TOKEN",
     "ActionChunkingHead",
     "create_action_head",
