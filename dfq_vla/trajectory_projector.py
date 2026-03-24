@@ -11,18 +11,18 @@ import torch.nn as nn
 class TrajHistProjector(nn.Module):
     """MLP projector for trajectory history.
     
-    Takes per-waypoint features (xyz + yaw) and projects them to the
+    Takes per-waypoint features (xyz + rot2d) and projects them to the
     LLM hidden dimension, producing one embedding per waypoint.
     
     Architecture mirrors DFQVLAProjector (vision projector):
         Linear(input_dim, hidden_size) → GELU → Linear(hidden_size, hidden_size)
     """
 
-    def __init__(self, input_dim: int = 4, hidden_size: int = 1024):
+    def __init__(self, input_dim: int = 5, hidden_size: int = 1024):
         """Initialize TrajHistProjector.
         
         Args:
-            input_dim: Per-waypoint feature dimension (default 4: xyz + yaw).
+            input_dim: Per-waypoint feature dimension (default 5: xyz + rot2d).
             hidden_size: LLM hidden dimension to project into.
         """
         super().__init__()
@@ -34,7 +34,7 @@ class TrajHistProjector(nn.Module):
         """Project trajectory features to LLM embedding space.
         
         Args:
-            traj_features: (B, T, input_dim) — e.g. (B, 16, 4) for xyz+yaw.
+            traj_features: (B, T, input_dim) — e.g. (B, 16, 5) for xyz+rot2d.
             
         Returns:
             (B, T, hidden_size) embeddings ready for scatter into input_embeds.
@@ -45,28 +45,14 @@ class TrajHistProjector(nn.Module):
         return hidden
 
 
-def extract_yaw_from_rot(rot: torch.Tensor) -> torch.Tensor:
-    """Extract yaw angle from 3x3 rotation matrices.
-    
-    Args:
-        rot: Rotation matrices of shape (..., 3, 3).
-        
-    Returns:
-        Yaw angles of shape (..., 1).
-    """
-    yaw = torch.atan2(rot[..., 1, 0], rot[..., 0, 0])
-    return yaw.unsqueeze(-1)
-
-
-def prepare_traj_input(xyz: torch.Tensor, rot: torch.Tensor) -> torch.Tensor:
-    """Prepare trajectory input by concatenating xyz with yaw.
+def prepare_traj_input(xyz: torch.Tensor, rot2d: torch.Tensor) -> torch.Tensor:
+    """Prepare trajectory input by concatenating xyz with 2D yaw rotation.
     
     Args:
         xyz: Position coordinates of shape (B, T, 3).
-        rot: Rotation matrices of shape (B, T, 3, 3).
+        rot2d: 2D rotation representation of shape (B, T, 2).
         
     Returns:
-        Combined features of shape (B, T, 4).
+        Combined features of shape (B, T, 5).
     """
-    yaw = extract_yaw_from_rot(rot)
-    return torch.cat([xyz, yaw], dim=-1)
+    return torch.cat([xyz, rot2d], dim=-1)

@@ -18,42 +18,6 @@ class DFQVLALossOutput:
     rot_loss: Optional[torch.Tensor] = None
 
 
-def compute_geodesic_loss(pred_rot: torch.Tensor, target_rot: torch.Tensor, eps: float = 1e-3) -> torch.Tensor:
-    """Compute Geodesic Loss between two batches of rotation matrices.
-    
-    Geodesic distance is defined as:
-    theta = arccos((tr(R_pred^T * R_target) - 1) / 2)
-    
-    Args:
-        pred_rot: Predicted rotation matrices of shape (..., 3, 3)
-        target_rot: Target rotation matrices of shape (..., 3, 3)
-        eps: Epsilon for numerical stability in acos. Must be large enough
-             for the training dtype (e.g. 1e-3 for bf16, 1e-7 for fp32).
-        
-    Returns:
-        Loss tensor (scalar).
-    """
-    # Compute in float32 to avoid bf16 precision issues with acos gradient
-    pred_f32 = pred_rot.float()
-    target_f32 = target_rot.float()
-    
-    # Calculate R_pred^T * R_target
-    m = torch.matmul(pred_f32.transpose(-1, -2), target_f32)
-    
-    # Compute trace: sum of diagonal elements
-    trace = m[..., 0, 0] + m[..., 1, 1] + m[..., 2, 2]
-    
-    # Clamp for numerical stability before acos
-    # (Trace of 3x3 rotation matrix is 1 + 2cos(theta), so (trace-1)/2 is cos(theta))
-    cos_theta = (trace - 1) / 2
-    cos_theta = torch.clamp(cos_theta, -1.0 + eps, 1.0 - eps)
-    
-    # Compute angle
-    theta = torch.acos(cos_theta)
-    
-    return theta.mean().to(pred_rot.dtype)
-
-
 class DFQVLALoss(nn.Module):
     """Loss calculator for DFQ VLA."""
     
@@ -65,6 +29,7 @@ class DFQVLALoss(nn.Module):
         
         # Loss functions
         self.xyz_loss_fn = nn.L1Loss(reduction='mean')
+        self.rot_loss_fn = nn.L1Loss(reduction='mean')
         
     def forward(
         self,
@@ -80,8 +45,8 @@ class DFQVLALoss(nn.Module):
             text_loss: Cross entropy loss from LM head (computed outside)
             pred_xyz: Predicted XYZ coordinates
             target_xyz: Target XYZ coordinates
-            pred_rot: Predicted rotation matrices
-            target_rot: Target rotation matrices
+            pred_rot: Predicted rotation 2D representation
+            target_rot: Target rotation 2D representation
             
         Returns:
             DFQVLALossOutput containing total and individual losses
@@ -114,7 +79,7 @@ class DFQVLALoss(nn.Module):
         if pred_rot is not None and target_rot is not None:
             # Cast target to match prediction dtype
             target_rot = target_rot.to(dtype=pred_rot.dtype)
-            rot_loss = compute_geodesic_loss(pred_rot, target_rot)
+            rot_loss = self.rot_loss_fn(pred_rot, target_rot)
             combined_loss += self.loss_weights.get("rot", 1.0) * rot_loss
             losses["rot_loss"] = rot_loss
             

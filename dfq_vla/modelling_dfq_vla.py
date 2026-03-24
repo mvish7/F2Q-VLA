@@ -295,14 +295,14 @@ class DFQVLAForConditionalGeneration(DFQVLAPretrainedModel, GenerationMixin, Tra
              
              traj_output = self.predict_future_trajectory(
                  vlm_context,
-                 return_rot_matrix=True,
+                 normalize_rot=True,
                  attention_mask=memory_key_padding_mask,
              )
              
         # Compute Total Loss
         if lm_loss is not None or (traj_output is not None):
             pred_xyz = traj_output["xyz"] if traj_output else None
-            pred_rot = traj_output["rot_matrix"] if traj_output else None
+            pred_rot = traj_output["rot2d"] if traj_output else None
             
             loss_output = self.loss_calculator(
                 text_loss=lm_loss,
@@ -325,7 +325,7 @@ class DFQVLAForConditionalGeneration(DFQVLAPretrainedModel, GenerationMixin, Tra
     def predict_future_trajectory(
         self,
         vlm_context: torch.Tensor,
-        return_rot_matrix: bool = True,
+        normalize_rot: bool = True,
         attention_mask: torch.Tensor | None = None,
     ) -> dict[str, torch.Tensor]:
         """Predict future trajectory from VLM context.
@@ -335,19 +335,18 @@ class DFQVLAForConditionalGeneration(DFQVLAPretrainedModel, GenerationMixin, Tra
         
         Args:
             vlm_context: VLM hidden states. Shape: [B, S, hidden_size].
-            return_rot_matrix: If True, convert 6D rotation to 3x3 matrix.
+            normalize_rot: If True, normalize the 2D rotation representation to unit circle.
             attention_mask: Optional mask for padded positions. Shape: [B, S].
                 True indicates padded (ignored) positions.
             
         Returns:
             Dictionary containing:
                 - "xyz": Predicted XYZ positions [B, num_queries, 3]
-                - "rot6d": 6D rotation representation [B, num_queries, 6]
-                - "rot_matrix": (optional) 3x3 rotation matrices [B, num_queries, 3, 3]
+                - "rot2d": 2D rotation representation [B, num_queries, 2]
         """
         return self.action_head(
             vlm_context,
-            return_rot_matrix=return_rot_matrix,
+            normalize_rot=normalize_rot,
             memory_key_padding_mask=attention_mask,
         )
 

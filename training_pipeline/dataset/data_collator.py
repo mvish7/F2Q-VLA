@@ -108,9 +108,14 @@ class DataCollator:
             # History
             h_xyz = torch.tensor(sample["ego_history_xyz"], dtype=torch.float32)
             h_rot = torch.tensor(sample["ego_history_rot"], dtype=torch.float32)
+            
+            # Convert 3x3 rotation matrices to 2D continuous yaw
+            yaw_h = torch.atan2(h_rot[..., 1, 0], h_rot[..., 0, 0])
+            h_rot = torch.stack([torch.cos(yaw_h), torch.sin(yaw_h)], dim=-1)
+            
             # Squeeze dimensions: [1, 1, T, 3] -> [T, 3]
             while h_xyz.ndim > 2: h_xyz = h_xyz.squeeze(0)
-            while h_rot.ndim > 3: h_rot = h_rot.squeeze(0)
+            while h_rot.ndim > 2: h_rot = h_rot.squeeze(0)
             
             ego_history_xyz_list.append(h_xyz)
             ego_history_rot_list.append(h_rot)
@@ -118,9 +123,14 @@ class DataCollator:
             # Future (Labels)
             f_xyz = torch.tensor(sample["ego_future_xyz"], dtype=torch.float32)
             f_rot = torch.tensor(sample["ego_future_rot"], dtype=torch.float32)
+            
+            # Convert 3x3 rotation matrices to 2D continuous yaw
+            yaw_f = torch.atan2(f_rot[..., 1, 0], f_rot[..., 0, 0])
+            f_rot = torch.stack([torch.cos(yaw_f), torch.sin(yaw_f)], dim=-1)
+            
             # Squeeze: [1, 1, T, 3] -> [T, 3]
             while f_xyz.ndim > 2: f_xyz = f_xyz.squeeze(0)
-            while f_rot.ndim > 3: f_rot = f_rot.squeeze(0)
+            while f_rot.ndim > 2: f_rot = f_rot.squeeze(0)
             
             ego_future_xyz_list.append(f_xyz)
             ego_future_rot_list.append(f_rot)

@@ -6,8 +6,7 @@ Uses a standard PyTorch TransformerDecoder architecture.
 
 import torch
 import torch.nn as nn
-
-from dfq_vla.geometry import compute_rotation_matrix_from_ortho6d
+import torch.nn.functional as F
 
 
 class ActionChunkingHead(nn.Module):
@@ -62,12 +61,12 @@ class ActionChunkingHead(nn.Module):
         
         # Output heads
         self.xyz_head = nn.Linear(hidden_size, 3)
-        self.rot_head = nn.Linear(hidden_size, 6)  # 6D continuous rotation
+        self.rot_head = nn.Linear(hidden_size, 2)  # 2D continuous yaw
         
     def forward(
         self,
         vlm_context: torch.Tensor,
-        return_rot_matrix: bool = True,
+        normalize_rot: bool = True,
         memory_key_padding_mask: torch.Tensor | None = None,
     ) -> dict[str, torch.Tensor]:
         """Forward pass to predict future trajectory.
@@ -75,15 +74,14 @@ class ActionChunkingHead(nn.Module):
         Args:
             vlm_context: VLM hidden states at context token(s). 
                 Shape: [B, S, hidden_size] where S is context sequence length.
-            return_rot_matrix: If True, convert 6D rotation to 3x3 matrix.
+            normalize_rot: If True, normalize the 2D rotation representation to exist on unit circle.
             memory_key_padding_mask: Optional mask for padded positions in vlm_context.
                 Shape: [B, S]. True indicates padded (ignored) positions.
             
         Returns:
             Dictionary containing:
                 - "xyz": Predicted XYZ positions [B, num_queries, 3]
-                - "rot6d": 6D rotation representation [B, num_queries, 6]
-                - "rot_matrix": (optional) 3x3 rotation matrices [B, num_queries, 3, 3]
+                - "rot2d": 2D rotation representation [B, num_queries, 2]
         """
         batch_size = vlm_context.shape[0]
         device = vlm_context.device
@@ -101,16 +99,15 @@ class ActionChunkingHead(nn.Module):
         
         # Predict outputs
         xyz = self.xyz_head(decoder_output)  # [B, num_queries, 3]
-        rot6d = self.rot_head(decoder_output)  # [B, num_queries, 6]
+        rot2d = self.rot_head(decoder_output)  # [B, num_queries, 2]
         
+        if normalize_rot:
+            rot2d = F.normalize(rot2d, dim=-1)
+            
         result = {
             "xyz": xyz,
-            "rot6d": rot6d,
+            "rot2d": rot2d,
         }
-        
-        if return_rot_matrix:
-            rot_matrix = compute_rotation_matrix_from_ortho6d(rot6d)  # [B, num_queries, 3, 3]
-            result["rot_matrix"] = rot_matrix
             
         return result
 

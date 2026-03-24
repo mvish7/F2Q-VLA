@@ -1,58 +1,33 @@
 """Geometry utilities for DFQ VLA.
 
-This module provides rotation matrix conversion functions.
+This module provides rotation representation conversion functions.
 """
 
 import torch
 import torch.nn.functional as F
 
 
-def compute_rotation_matrix_from_ortho6d(ortho6d: torch.Tensor) -> torch.Tensor:
-    """Compute rotation matrix from 6D continuous rotation representation.
-    
-    Uses Gram-Schmidt orthogonalization to convert a 6D vector to a 3x3 rotation matrix.
-    Based on "On the Continuity of Rotation Representations in Neural Networks" (Zhou et al., CVPR 2019).
-    
-    Args:
-        ortho6d: 6D rotation representation of shape (..., 6).
-        
-    Returns:
-        Rotation matrices of shape (..., 3, 3).
-    """
-    # Split into two 3D vectors
-    x_raw = ortho6d[..., :3]  # First column
-    y_raw = ortho6d[..., 3:6]  # Second column hint
-    
-    # Normalize first column (eps for bf16 safety with random init)
-    x = F.normalize(x_raw, dim=-1, eps=1e-6)
-    
-    # Gram-Schmidt: make y orthogonal to x
-    dot = (x * y_raw).sum(dim=-1, keepdim=True)
-    y = y_raw - dot * x
-    y = F.normalize(y, dim=-1, eps=1e-6)
-    
-    # Cross product for third column
-    z = torch.cross(x, y, dim=-1)
-    
-    # Stack into rotation matrix
-    # Each column is a basis vector
-    rot_matrix = torch.stack([x, y, z], dim=-1)  # (..., 3, 3)
-    
-    return rot_matrix
-
-
-def rotation_matrix_to_ortho6d(rot_matrix: torch.Tensor) -> torch.Tensor:
-    """Convert rotation matrix to 6D continuous representation.
+def rotmat_to_rot2d(rot_matrix: torch.Tensor) -> torch.Tensor:
+    """Convert rotation matrix to 2D continuous yaw representation [cos(yaw), sin(yaw)].
     
     Args:
         rot_matrix: Rotation matrices of shape (..., 3, 3).
         
     Returns:
-        6D rotation representation of shape (..., 6).
+        2D rotation representation of shape (..., 2).
     """
-    # Take first two columns (x and y vectors)
-    # rot_matrix shape: (..., 3, 3) where columns are [x, y, z]
-    x = rot_matrix[..., :, 0]  # First column: (..., 3)
-    y = rot_matrix[..., :, 1]  # Second column: (..., 3)
-    return torch.cat([x, y], dim=-1)  # (..., 6)
+    yaw = torch.atan2(rot_matrix[..., 1, 0], rot_matrix[..., 0, 0])
+    return torch.stack([torch.cos(yaw), torch.sin(yaw)], dim=-1)
 
+
+def rot2d_to_yaw(rot2d: torch.Tensor) -> torch.Tensor:
+    """Convert 2D continuous yaw representation [cos(yaw), sin(yaw)] to scalar yaw angle.
+    
+    Args:
+        rot2d: 2D rotation representation of shape (..., 2).
+        
+    Returns:
+        Yaw angles of shape (..., 1).
+    """
+    yaw = torch.atan2(rot2d[..., 1], rot2d[..., 0])
+    return yaw.unsqueeze(-1)
