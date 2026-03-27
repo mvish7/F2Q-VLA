@@ -1,0 +1,4 @@
+[submodule "VQ-VAE"]
+	path = VQ-VAE
+	url = https://github.com/mvish7/VQ-VAE.git
+	branch = enable_yaw_only_rotation
