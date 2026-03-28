@@ -36,7 +36,7 @@ def main():
     
     # Load and Prepare Dataset
     print("Loading dataset...")
-    dataset_loader = DatasetLoader(config.data, processor)
+    dataset_loader = DatasetLoader(config.data, processor, model_config=config.model)
     train_dataset, eval_dataset = dataset_loader.load_dataset()
     data_collator = dataset_loader.get_collator()
     

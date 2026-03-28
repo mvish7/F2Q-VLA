@@ -18,6 +18,12 @@ class ModelConfig:
     
     # Loss weights
     loss_weights: dict = field(default_factory=lambda: {"text": 1.0, "xyz": 0.001, "rot": 0.001})
+    
+    # VQ-VAE trajectory tokenizer
+    vqvae_checkpoint_path: str = ""     # Path to pre-trained VQ-VAE checkpoint
+    vqvae_num_embeddings: int = 768     # Codebook size K
+    vqvae_hidden_dim: int = 256         # Must match trained model
+    vqvae_embedding_dim: int = 256      # Must match trained model
 
 @dataclass
 class DataConfig:
@@ -75,7 +81,7 @@ class TrainingConfig:
     weight_decay: float = 0.01
     use_liger_kernel: bool = False  # Enable Liger Kernel for faster training
     torch_empty_cache_steps: int = None  # Clear CUDA cache every N steps (None = disabled)
-    optim: str = "adamw_torch"  # Optimizer type: adamw_torch, adamw_torch_fused, adafactor, sgd, etc.
+    optim: str = "MuonPlusAdamW"  # Optimizer type: adamw_torch, adamw_bnb_8bit, 
     
 @dataclass
 class VLMTrainingConfig:

@@ -1,5 +1,5 @@
 import random
-from typing import Dict, List, Any
+from typing import Any
 
 # Default system message
 DEFAULT_SYSTEM_MESSAGE = """You are a Vision Language Model specialized in image captioning task. Please be thorough and 
@@ -40,7 +40,7 @@ def get_fields_from_sample(sample: Dict[str, Any]):
         # pixmo dataset
         return sample["image_path"], random.choice(CAPTION_PROMPTS), sample["caption"]
 
-def format_data(sample: Dict[str, Any], system_message: str = DEFAULT_SYSTEM_MESSAGE) -> List[Dict[str, Any]]:
+def format_data(sample: dict[str, Any], system_message: str = DEFAULT_SYSTEM_MESSAGE) -> list[dict[str, Any]]:
     """Format a sample into a conversation list."""
     # fetch info from sample
     image_path, user_text, assistant_text = get_fields_from_sample(sample)
@@ -76,9 +76,11 @@ TRAJ_TOKEN = {
     "history": "<|traj_history|>",
     "history_start": "<|traj_history_start|>",
     "history_end": "<|traj_history_end|>",
+    "future_start": "<|traj_future_start|>",
+    "future_end": "<|traj_future_end|>",
 }
 
-def format_vla_data(sample: Dict[str, Any], use_flex: bool = False) -> List[Dict[str, Any]]:
+def format_vla_data(sample: dict[str, Any], vqvae_indices: list[int], use_flex: bool = False) -> list[dict[str, Any]]:
     """Format a VLA sample into a conversation list for DFQ VLA.
     
     Args:
@@ -139,13 +141,9 @@ def format_vla_data(sample: Dict[str, Any], use_flex: bool = False) -> List[Dict
         "text": f"{hist_traj_placeholder}{user_text}"
     })
 
-    # 3. Assistant Target (Reasoning)
-    # We want the model to learn to output: <|cot_start|> reasoning
-    coc_reasoning = sample.get("coc_reasoning", "")
-    # Handle case where coc_reasoning is a list (e.g., from inference output)
-    if isinstance(coc_reasoning, list):
-        coc_reasoning = coc_reasoning[0] if coc_reasoning else ""
-    assistant_text = "<|cot_start|> " + coc_reasoning
+    # 3. Assistant Target — VQ-VAE trajectory indices
+    traj_tokens = " ".join(f"<i{idx}>" for idx in vqvae_indices)
+    assistant_text = f"{TRAJ_TOKEN['future_start']} {traj_tokens} {TRAJ_TOKEN['future_end']}"
     
     return [
         {

@@ -1,15 +1,16 @@
 from datasets import load_from_disk
-from typing import Tuple, Any, Dict
-from ..configs.configs import DataConfig
+from typing import Any
+from ..configs.configs import DataConfig, ModelConfig
 from .dataset_formatter import format_data, format_vla_data
 from .data_collator import DataCollator
 
 class DatasetLoader:
-    def __init__(self, config: DataConfig, processor: Any):
+    def __init__(self, config: DataConfig, processor: Any, model_config: ModelConfig = None):
         self.config = config
         self.processor = processor
+        self.model_config = model_config
 
-    def load_dataset(self) -> Tuple[Any, Any]:
+    def load_dataset(self) -> tuple[Any, Any]:
         """Load and process the dataset."""
         dataset = load_from_disk(self.config.dataset_path)
         
@@ -50,4 +51,23 @@ class DatasetLoader:
         # Check if processor is configured for flex scene encoder
         use_flex = getattr(self.processor, 'use_flex_scene_encoder', False)
 
-        return DataCollator(self.processor, image_token_id, self.config, use_flex=use_flex)
+        # Create VQ-VAE tokenizer for trajectory tokenization (runs on CPU dynamically)
+        vqvae_tokenizer = None
+        if self.model_config and getattr(self.model_config, "vqvae_checkpoint_path", None):
+            import sys
+            import os
+            from pathlib import Path
+            vla_root = str(Path(__file__).resolve().parents[3])
+            if vla_root not in sys.path:
+                sys.path.insert(0, vla_root)
+                
+            from dfq_vla.vqvae_tokenizer import VQVAETrajectoryTokenizer
+            
+            vqvae_tokenizer = VQVAETrajectoryTokenizer(
+                checkpoint_path=self.model_config.vqvae_checkpoint_path,
+                num_embeddings=getattr(self.model_config, "vqvae_num_embeddings", 768),
+                hidden_dim=getattr(self.model_config, "vqvae_hidden_dim", 256),
+                embedding_dim=getattr(self.model_config, "vqvae_embedding_dim", 256),
+            )
+
+        return DataCollator(self.processor, image_token_id, self.config, use_flex=use_flex, vqvae_tokenizer=vqvae_tokenizer)

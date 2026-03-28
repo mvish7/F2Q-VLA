@@ -18,6 +18,15 @@ from dfq_vla.trajectory_projector import TrajHistProjector, prepare_traj_input
 from dfq_vla.traj_utils import TrajectoryFusionMixin
 from dfq_vla.action_head import ActionChunkingHead
 from dfq_vla.flex_scene_encoder import FlexSceneEncoder, create_flex_scene_encoder
+import sys
+import os
+
+try:
+    from dfq_vla.vqvae_tokenizer import VQVAETrajectoryTokenizer
+except ImportError:
+    print(f"Warning: Could not import VQVAETrajectoryTokenizer.")
+    VQVAETrajectoryTokenizer = None
+
 from dfq_vla.loss import DFQVLALoss
 
 
@@ -109,9 +118,30 @@ class DFQVLAForConditionalGeneration(DFQVLAPretrainedModel, GenerationMixin, Tra
         
         # 7. Initialize Flex Scene Encoder (optional)
         self._initialize_flex_scene_encoder(config)
+        
+        # 8. Initialize VQ-VAE Trajectory Decoder (Phase 2)
+        self._initialize_vqvae(config)
 
-        # 8. Tie weights if necessary (standard HF practice)
+        # 9. Tie weights if necessary (standard HF practice)
         self.post_init()
+        
+    def _initialize_vqvae(self, config):
+        """Initialize frozen VQ-VAE for trajectory decoding."""
+        vqvae_checkpoint_path = getattr(config, "vqvae_checkpoint_path", None)
+        if vqvae_checkpoint_path and VQVAETrajectoryTokenizer is not None:
+            print(f"Loading VQ-VAE from {vqvae_checkpoint_path}...")
+            # Initialize unified tokenizer wrapper (also freezes weights)
+            self.vqvae_tokenizer = VQVAETrajectoryTokenizer(
+                checkpoint_path=vqvae_checkpoint_path,
+                num_embeddings=getattr(config, "vqvae_num_embeddings", 768),
+                embedding_dim=getattr(config, "vqvae_embedding_dim", 256),
+                hidden_dim=getattr(config, "vqvae_hidden_dim", 256)
+            )
+            print("Successfully loaded frozen VQ-VAE tokenizer.")
+        else:
+            self.vqvae_tokenizer = None
+            if getattr(config, "vqvae_checkpoint_path", None) is not None:
+                print("Warning: config specifies vqvae_checkpoint_path but VQVAETrajectoryTokenizer import failed.")
     
     def _initialize_traj_projector(self, config):
         """Initialize MLP projector for trajectory history encoding."""
@@ -292,12 +322,49 @@ class DFQVLAForConditionalGeneration(DFQVLAPretrainedModel, GenerationMixin, Tra
              memory_key_padding_mask = None
              if attention_mask is not None:
                  memory_key_padding_mask = ~attention_mask.bool()  # Invert: 0 -> True (pad), 1 -> False (keep)
+                 
+             # Phase 2: Extract VQ-VAE indices from input_ids and decode
+             base_traj = None
+             if hasattr(self, "vqvae_tokenizer") and self.vqvae_tokenizer is not None and input_ids is not None:
+                 B = input_ids.shape[0]
+                 start_id = self.config.traj_token_ids["future_start"]
+                 traj_start_idx = self.config.traj_token_start_idx
+                 
+                 # Prepare indices tensor [B, 8]
+                 vqvae_indices = torch.zeros(B, 8, dtype=torch.long, device=input_ids.device)
+                 found_all = True
+                 
+                 for b in range(B):
+                     matches = (input_ids[b] == start_id).nonzero(as_tuple=True)[0]
+                     if len(matches) > 0:
+                         start_pos = matches[-1].item()
+                         for i in range(8):
+                             if start_pos + 1 + i < input_ids.shape[1]:
+                                 token = input_ids[b, start_pos + 1 + i].item()
+                                 if traj_start_idx <= token < traj_start_idx + getattr(self.config, 'traj_vocab_size', 768):
+                                     vqvae_indices[b, i] = token - traj_start_idx
+                                 else:
+                                     found_all = False
+                                     break
+                     else:
+                         found_all = False
+                 
+                 if found_all:
+                     with torch.no_grad():
+                         # vqvae_indices is [B, 8]
+                         # Decode returns [B, 64, 5] (x, y, z, sin, cos) natively inside vqvae_tokenizer
+                         base_traj = self.vqvae_tokenizer.decode(vqvae_indices).to(vlm_context.dtype).to(vlm_context.device)
              
-             traj_output = self.predict_future_trajectory(
-                 vlm_context,
-                 normalize_rot=True,
-                 attention_mask=memory_key_padding_mask,
-             )
+             if base_traj is not None:
+                 traj_output = self.predict_future_trajectory(
+                     vlm_context,
+                     base_traj=base_traj,
+                     normalize_rot=True,
+                     attention_mask=memory_key_padding_mask,
+                 )
+             else:
+                 # Fallback if VQ-VAE extraction failed or not available
+                 print("Warning: VQ-VAE base trajectory could not be extracted. ActionChunkingHead requires base_traj.")
              
         # Compute Total Loss
         if lm_loss is not None or (traj_output is not None):
@@ -325,16 +392,18 @@ class DFQVLAForConditionalGeneration(DFQVLAPretrainedModel, GenerationMixin, Tra
     def predict_future_trajectory(
         self,
         vlm_context: torch.Tensor,
+        base_traj: torch.Tensor,
         normalize_rot: bool = True,
         attention_mask: torch.Tensor | None = None,
     ) -> dict[str, torch.Tensor]:
-        """Predict future trajectory from VLM context.
+        """Predict future trajectory from VLM context and coarse base representation.
         
-        This method takes the hidden states from the VLM and uses the action head
-        to predict future waypoints via cross-attention.
+        This method uses the action head to predict delta waypoints via cross-attention
+        to a concatenated memory of VLM context and the VQ-VAE decoded base trajectory.
         
         Args:
             vlm_context: VLM hidden states. Shape: [B, S, hidden_size].
+            base_traj: coarse base trajectory from VQ-VAE. Shape: [B, 64, 5].
             normalize_rot: If True, normalize the 2D rotation representation to unit circle.
             attention_mask: Optional mask for padded positions. Shape: [B, S].
                 True indicates padded (ignored) positions.
@@ -345,7 +414,8 @@ class DFQVLAForConditionalGeneration(DFQVLAPretrainedModel, GenerationMixin, Tra
                 - "rot2d": 2D rotation representation [B, num_queries, 2]
         """
         return self.action_head(
-            vlm_context,
+            vlm_context=vlm_context,
+            base_traj=base_traj,
             normalize_rot=normalize_rot,
             memory_key_padding_mask=attention_mask,
         )

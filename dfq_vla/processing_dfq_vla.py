@@ -32,6 +32,7 @@ class DFQVLAProcessor(ProcessorMixin):
         "history_start": "<|traj_history_start|>",
         "history_end": "<|traj_history_end|>",
         "future_start": "<|traj_future_start|>",
+        "future_end": "<|traj_future_end|>",
     }
 
     def __init__(self, image_processor, tokenizer, chat_template, vision_config=None, traj_vocab_size=768, 
@@ -169,3 +170,40 @@ class DFQVLAProcessor(ProcessorMixin):
 
     def decode(self, *args, **kwargs):
         return self.tokenizer.decode(*args, **kwargs)
+
+    def extract_vqvae_indices(self, token_sequence: torch.Tensor) -> list[int]:
+        """Extract VQ-VAE codebook indices from a sequence of tokens.
+        
+        Searches for <|traj_future_start|> and extracts the subsequent 8 trajectory tokens
+        (<iX>), converting them to raw codebook IDs.
+        
+        Args:
+            token_sequence: 1D tensor [L] containing the token IDs.
+            
+        Returns:
+            List of up to 8 integer codebook IDs. Empty list if start token not found.
+        """
+        start_id = self.traj_token_ids["future_start"]
+        end_id = getattr(self.tokenizer, "traj_token_end_idx", None)
+        
+        # Find start token
+        matches = (token_sequence == start_id).nonzero(as_tuple=True)[0]
+        if len(matches) == 0:
+            return []
+            
+        start_pos = matches[-1].item()  # Use the last occurrence if multiple
+        
+        # Extract up to 8 tokens after start
+        extracted_indices = []
+        for i in range(start_pos + 1, min(start_pos + 9, len(token_sequence))):
+            token_id = token_sequence[i].item()
+            # Check if it's a trajectory token
+            if getattr(self, "traj_token_start_idx", None) is not None:
+                if self.traj_token_start_idx <= token_id <= self.traj_token_start_idx + self.traj_vocab_size - 1:
+                    codebook_id = token_id - self.traj_token_start_idx
+                    extracted_indices.append(codebook_id)
+                else:
+                    # Stopped seeing trajectory tokens prematurely
+                    break
+                    
+        return extracted_indices
