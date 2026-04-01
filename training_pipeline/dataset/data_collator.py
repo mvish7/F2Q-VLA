@@ -13,6 +13,16 @@ class DataCollator:
         self.config = config
         self.use_flex = use_flex
         self.vqvae_tokenizer = vqvae_tokenizer
+        self._setup_assistant_masking()
+    
+    def _setup_assistant_masking(self):
+        """Pre-compute token IDs for masking everything before assistant content."""
+        tokenizer = self.processor.tokenizer
+        self.im_start_id = tokenizer.convert_tokens_to_ids("<|im_start|>")
+        # "assistant\n" may tokenize to 1-2 tokens; measure once
+        self._assistant_header_len = 1 + len(
+            tokenizer.encode("assistant\n", add_special_tokens=False)
+        )  # 1 for <|im_start|> + len("assistant\n" tokens)
     
     def _extract_traj_data(self, curr_sample: dict[str, Any]) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
     
@@ -131,22 +141,19 @@ class DataCollator:
         del flat_images
         
         # 4. Prepare Labels for Causal LM
+        # Mask everything before assistant content so the model only learns
+        # to predict the assistant response (traj tokens + delimiters + <|im_end|>).
         labels = batch["input_ids"].clone()
-        labels[labels == self.processor.tokenizer.pad_token_id] = -100
-        labels[labels == self.image_token_id] = -100
         
-        # Mask trajectory special tokens (delimiters are not prediction targets)
-        traj_tokens_to_mask = [
-            "<|traj_history|>",
-            "<|traj_history_start|>",
-            "<|traj_history_end|>",
-            "<|traj_future_start|>",
-            "<|traj_future_end|>",
-        ]
-        for token in traj_tokens_to_mask:
-            token_id = self.processor.tokenizer.convert_tokens_to_ids(token)
-            if token_id != self.processor.tokenizer.unk_token_id:  # Only mask if token exists
-                labels[labels == token_id] = -100
+        for i in range(labels.shape[0]):
+            # Find last <|im_start|> — always the assistant turn
+            positions = (labels[i] == self.im_start_id).nonzero(as_tuple=True)[0]
+            if len(positions) > 0:
+                # Mask everything up to and including "<|im_start|>assistant\n"
+                labels[i, : positions[-1].item() + self._assistant_header_len] = -100
+        
+        # Mask pad tokens (right-padding)
+        labels[labels == self.processor.tokenizer.pad_token_id] = -100
         
         batch["labels"] = labels
 

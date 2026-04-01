@@ -145,7 +145,7 @@ class DFQVLAForConditionalGeneration(DFQVLAPretrainedModel, GenerationMixin, Tra
     
     def _initialize_traj_projector(self, config):
         """Initialize MLP projector for trajectory history encoding."""
-        traj_input_dim = getattr(config, "traj_input_dim", 4)
+        traj_input_dim = getattr(config, "traj_input_dim", 5)
         self.traj_projector = TrajHistProjector(
             input_dim=traj_input_dim,
             hidden_size=config.hidden_size,

@@ -27,7 +27,7 @@ class DFQVLAConfig(PretrainedConfig):
             tokens_per_history_traj: int = 16,  # 16 waypoints, 1 embedding each
             traj_token_start_idx: int = None,  # Set during tokenizer init
             traj_token_ids: dict = None,  # Mapping for special tokens
-            traj_input_dim: int = 4,  # Per-waypoint feature dim (xyz + yaw)
+            traj_input_dim: int = 5,  # Per-waypoint feature dim (xyz + yaw)
             # Action head config (for future trajectory prediction)
             num_action_queries: int = 64,  # Number of future waypoints
             num_action_layers: int = 4,  # Transformer decoder layers

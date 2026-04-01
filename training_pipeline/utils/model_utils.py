@@ -58,12 +58,20 @@ def load_model_and_processor(config) -> Tuple[Any, Any]:
         print(f"Using QLoRA with 4-bit quantization: quant_type={config.qlora.bnb_4bit_quant_type}, compute_dtype={compute_dtype}")
         print(f"Skipping modules from quantization: {skip_modules}")
     
+    # Load config and inject VQ-VAE attributes before model init
+    hf_config = AutoConfig.from_pretrained(config.model.model_path, trust_remote_code=False)
+    hf_config.vqvae_checkpoint_path = getattr(config.model, "vqvae_checkpoint_path", None)
+    hf_config.vqvae_num_embeddings = getattr(config.model, "vqvae_num_embeddings", 768)
+    hf_config.vqvae_hidden_dim = getattr(config.model, "vqvae_hidden_dim", 256)
+    hf_config.vqvae_embedding_dim = getattr(config.model, "vqvae_embedding_dim", 256)
+
     model = AutoModelForCausalLM.from_pretrained(
         config.model.model_path,
+        config=hf_config,
         torch_dtype=torch_dtype,
         attn_implementation=config.model.attn_implementation,
         quantization_config=quantization_config,
-        trust_remote_code=False
+        trust_remote_code=False,
     )
     
     # Ensure custom modules are natively cast to model's torch_dtype

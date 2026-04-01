@@ -20,7 +20,7 @@ class ModelConfig:
     loss_weights: dict = field(default_factory=lambda: {"text": 1.0, "xyz": 0.001, "rot": 0.001})
     
     # VQ-VAE trajectory tokenizer
-    vqvae_checkpoint_path: str = ""     # Path to pre-trained VQ-VAE checkpoint
+    vqvae_checkpoint_path: str = "/media/vishal/workspace/projects/VQ-VAE/checkpoints/codebook768_2drot_high_perp/epoch43_best.pt"     # Path to pre-trained VQ-VAE checkpoint
     vqvae_num_embeddings: int = 768     # Codebook size K
     vqvae_hidden_dim: int = 256         # Must match trained model
     vqvae_embedding_dim: int = 256      # Must match trained model
@@ -30,11 +30,11 @@ class DataConfig:
     dataset_path: str
     image_base_path: str = ""  # Base path to prepend to relative image paths
     test_split_ratio: float = 0.01
-    image_size_height: int = 360
-    image_size_width: int = 640
-    dataloader_num_workers: int = 6
+    image_size_height: int = 320
+    image_size_width: int = 512
+    dataloader_num_workers: int = 1
     dataloader_pin_memory: bool = True
-    dataloader_prefetch_factor: int = 2
+    dataloader_prefetch_factor: int = 0
     # Flex Scene Encoder data config
     num_cameras: int = 4  # Number of camera views
     num_timestamps: int = 4  # Number of timestamps per camera
@@ -81,7 +81,7 @@ class TrainingConfig:
     weight_decay: float = 0.01
     use_liger_kernel: bool = False  # Enable Liger Kernel for faster training
     torch_empty_cache_steps: int = None  # Clear CUDA cache every N steps (None = disabled)
-    optim: str = "MuonPlusAdamW"  # Optimizer type: adamw_torch, adamw_bnb_8bit, 
+    optim: str = "adamw_bnb_8bit"  # Optimizer type: adamw_torch, adamw_bnb_8bit,
     
 @dataclass
 class VLMTrainingConfig:

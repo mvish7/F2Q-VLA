@@ -16,9 +16,9 @@ data:
   test_split_ratio: 0.01
   image_size_height: 320
   image_size_width: 512
-  dataloader_num_workers: 6  # Use main process to avoid memory fragmentation from prefetching
+  dataloader_num_workers: 1  # Use main process to avoid memory fragmentation from prefetching
   dataloader_pin_memory: true  # Disable pin_memory to save GPU memory
-  dataloader_prefetch_factor: 4
+  dataloader_prefetch_factor: 1
 
 training:
   output_dir: "/media/vishal/workspace/projects/VLA/checkpoints/dfq_with_dino_testing"

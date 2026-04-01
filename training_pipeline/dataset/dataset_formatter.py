@@ -1,5 +1,5 @@
 import random
-from typing import Any
+from typing import Any, Dict
 
 # Default system message
 DEFAULT_SYSTEM_MESSAGE = """You are a Vision Language Model specialized in image captioning task. Please be thorough and 
@@ -40,7 +40,7 @@ def get_fields_from_sample(sample: Dict[str, Any]):
         # pixmo dataset
         return sample["image_path"], random.choice(CAPTION_PROMPTS), sample["caption"]
 
-def format_data(sample: dict[str, Any], system_message: str = DEFAULT_SYSTEM_MESSAGE) -> list[dict[str, Any]]:
+def format_data(sample: Dict[str, Any], system_message: str = DEFAULT_SYSTEM_MESSAGE) -> list[Dict[str, Any]]:
     """Format a sample into a conversation list."""
     # fetch info from sample
     image_path, user_text, assistant_text = get_fields_from_sample(sample)
@@ -80,7 +80,7 @@ TRAJ_TOKEN = {
     "future_end": "<|traj_future_end|>",
 }
 
-def format_vla_data(sample: dict[str, Any], vqvae_indices: list[int], use_flex: bool = False) -> list[dict[str, Any]]:
+def format_vla_data(sample: Dict[str, Any], vqvae_indices: list[int], use_flex: bool = False) -> list[Dict[str, Any]]:
     """Format a VLA sample into a conversation list for DFQ VLA.
     
     Args:
@@ -92,7 +92,7 @@ def format_vla_data(sample: dict[str, Any], vqvae_indices: list[int], use_flex: 
         Conversation list for chat template.
     """
     # 1. System Prompt
-    system_msg = "You are a driving assistant that generates safe and accurate actions."
+    system_msg = "You are an expert self-driving system that generates safe and accurate future driving trajectories."
     
     # 2. User Prompt Components
     user_content = []
@@ -134,7 +134,7 @@ def format_vla_data(sample: dict[str, Any], vqvae_indices: list[int], use_flex: 
     )
     
     # c. Text Prompt
-    user_text = "output the chain-of-thought reasoning of the driving process, then output the future trajectory."
+    user_text = "By analyzing the given images and the past trajectory, predict 8 discrete ids corresponding to the future trajectory."
     
     user_content.append({
         "type": "text",
