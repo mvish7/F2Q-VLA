@@ -94,7 +94,7 @@ class VQVAETrajectoryTokenizer(nn.Module):
         features = torch.cat([xyz, sin_yaw, cos_yaw], dim=1)  # (T, 5)
 
         # Transpose to (1, 5, T) for VQ-VAE encoder
-        features = features.T.unsqueeze(0).to(dtype=self.model.quantizer.embeddings.weight.dtype, device=self.model.quantizer.embeddings.weight.device)
+        features = features.T.unsqueeze(0).to(dtype=self.model.quantizer.embeddings.dtype, device=self.model.quantizer.embeddings.device)
 
         # Encode → (1, 8)
         indices, _ = self.model.encode(features)

@@ -39,7 +39,7 @@ def get_training_args(config: VLMTrainingConfig, data_collator: Any) -> SFTConfi
         dataloader_pin_memory=config.data.dataloader_pin_memory,
         # prefetch_factor must be None when num_workers=0
         dataloader_prefetch_factor=config.data.dataloader_prefetch_factor if config.data.dataloader_num_workers > 0 else None,
-        # max_seq_length=config.data.max_len,
+        max_seq_length=config.data.max_len,
         dataset_kwargs={"skip_prepare_dataset": True}, # We prepare it manually
         dataset_text_field="text", # Dummy field as we use custom collator
         remove_unused_columns=False, # Essential for custom VLM collators often

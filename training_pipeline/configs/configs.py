@@ -15,6 +15,11 @@ class ModelConfig:
     freeze_projector: bool = False
     freeze_action_head: bool = False
     freeze_flex_encoder: bool = False  # Flex scene encoder freezing
+    freeze_traj_projector: bool = False
+    
+    # Component inclusion (set False to exclude from model entirely)
+    include_action_head: bool = True
+    include_vqvae: bool = True
     
     # Loss weights
     loss_weights: dict = field(default_factory=lambda: {"text": 1.0, "xyz": 0.001, "rot": 0.001})
@@ -38,7 +43,7 @@ class DataConfig:
     # Flex Scene Encoder data config
     num_cameras: int = 4  # Number of camera views
     num_timestamps: int = 4  # Number of timestamps per camera
-    # max_len: int = 1024
+    max_len: int = 1024
 
 @dataclass
 class LoRAConfig:
@@ -50,6 +55,17 @@ class LoRAConfig:
     use_rslora: bool = True
     target_modules: List[str] = field(default_factory=lambda: ["q_proj", "v_proj"])
     modules_to_save: List[str] = field(default_factory=list)
+    learning_rate: Optional[float] = None  # Per-group LR for LLM LoRA weights (None = use training.learning_rate)
+
+@dataclass
+class VisionLoRAConfig:
+    """LoRA configuration for the vision tower (separate from LLM LoRA)."""
+    enabled: bool = False
+    r: int = 16
+    lora_alpha: int = 32
+    lora_dropout: float = 0.05
+    target_modules: List[str] = field(default_factory=lambda: ["q_proj", "k_proj", "v_proj", "o_proj", "up_proj", "down_proj"])
+    learning_rate: Optional[float] = None  # Per-group LR for Vision LoRA weights (None = use training.learning_rate)
 
 @dataclass
 class QLoRAConfig:
@@ -90,3 +106,4 @@ class VLMTrainingConfig:
     training: TrainingConfig
     lora: Optional[LoRAConfig] = None
     qlora: Optional[QLoRAConfig] = None
+    vision_lora: Optional[VisionLoRAConfig] = None

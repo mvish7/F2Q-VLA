@@ -1,26 +1,64 @@
 model:
-  model_path: "/media/vishal/workspace/projects/VLA/modality_alignment/dfq_vla_artifacts"
+  model_path: "/media/vishal/workspace/projects/VLA/dfq_vla_artifacts"
   type: "dfq_vla"
   freeze_vision_tower: true
   freeze_llm: true
   freeze_projector: false
+  include_action_head: false
+  include_vqvae: false
+  loss_weights:
+    text: 1.0
+    xyz: 0.001
+    rot: 0.001
+
 
 data:
-  dataset_path: "/media/vishal/datasets/pixmo/metadata_cleaned/"
+  dataset_path: "/media/vishal/datasets/ar1_coc_dataset/extracted/ar1_hf_dataset2/"
+  image_base_path: "/media/vishal/datasets/ar1_coc_dataset/extracted/"
   test_split_ratio: 0.01
-  image_size_height: 360
-  image_size_width: 640
-  dataloader_num_workers: 6
+  image_size_height: 320
+  image_size_width: 512
+  dataloader_num_workers: 6  # Use main process to avoid memory fragmentation from prefetching
+  dataloader_pin_memory: true  # Disable pin_memory to save GPU memory
+  dataloader_prefetch_factor: 3 # 
+  max_len: 1024
 
 training:
-  output_dir: "/media/vishal/workspace/projects/VLA/checkpoints/stage1_projector"
-  num_train_epochs: 1
-  learning_rate: 2.0e-4
+  output_dir: "/media/vishal/workspace/projects/VLA/checkpoints/dfq_stage1"
+  num_train_epochs: 50
+  learning_rate: 1.0e-5
+  weight_decay: 0.01
   per_device_train_batch_size: 4
   gradient_accumulation_steps: 16
   report_to: "tensorboard"
   save_steps: 500
-  logging_steps: 100
+  logging_steps: 3
+  use_liger_kernel: true
+  torch_empty_cache_steps: 1
+  optim: "adamw_bnb_8bit"
+  gradient_checkpointing: true  # Recommended for QLoRA
+  bf16: false  # Disable autocast, rely on native bfloat16 from th
 
-lora:
+qlora:
   enabled: false
+  load_in_4bit: false
+  bnb_4bit_quant_type: "nf4"
+  bnb_4bit_compute_dtype: "bfloat16"
+  bnb_4bit_use_double_quant: true
+
+# LoRA adapters (required when using QLoRA)
+lora:
+  enabled: true
+  r: 64
+  lora_alpha: 128
+  target_modules:
+    - "embed_tokens"
+    - "lm_head"
+
+  modules_to_save:
+    - "flex_scene_encoder"
+    - "action_head"
+    - "projector"
+    - "traj_hist_projector"
+
+

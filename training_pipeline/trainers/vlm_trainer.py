@@ -5,10 +5,12 @@ from trl import SFTTrainer, SFTConfig
 from transformers import TrainingArguments
 from ..configs.configs import VLMTrainingConfig
 from ..configs.config_utils import save_config
+from ..utils.param_groups import build_param_groups
 
 class VLMTrainer(SFTTrainer):
     """
     Custom VLM Trainer that extends SFTTrainer.
+    Supports per-module learning rate groups for staged training.
     """
     
     def __init__(
@@ -34,6 +36,26 @@ class VLMTrainer(SFTTrainer):
             processing_class=processing_class,
             peft_config=peft_config
         )
+    
+    def create_optimizer(self):
+        """Override to build optimizer with per-module LR parameter groups.
+        
+        Uses build_param_groups to classify trainable params into
+        default / LLM LoRA / Vision LoRA groups with distinct LRs.
+        """
+        if self.optimizer is not None:
+            return self.optimizer
+        
+        param_groups = build_param_groups(self.model, self.vlm_config)
+        
+        # Resolve optimizer class from args.optim string
+        optimizer_cls, optimizer_kwargs = SFTTrainer.get_optimizer_cls_and_kwargs(self.args, self.model)
+        
+        # Remove 'lr' from kwargs since each group has its own
+        optimizer_kwargs.pop("lr", None)
+        
+        self.optimizer = optimizer_cls(param_groups, **optimizer_kwargs)
+        return self.optimizer
         
     def training_step(self, model, inputs, num_items_in_batch=None):
         """Override training_step with NaN gradient detection."""

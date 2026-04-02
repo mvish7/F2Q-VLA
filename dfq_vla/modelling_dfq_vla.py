@@ -110,7 +110,10 @@ class DFQVLAForConditionalGeneration(DFQVLAPretrainedModel, GenerationMixin, Tra
         self._initialize_traj_projector(config)
         
         # 5. Initialize action head for future trajectory prediction
-        self._initialize_action_head(config)
+        if getattr(config, 'include_action_head', True):
+            self._initialize_action_head(config)
+        else:
+            self.action_head = None
         
         # 6. Initialize Loss Calculator
         loss_weights = getattr(config, "loss_weights", None)
@@ -120,7 +123,10 @@ class DFQVLAForConditionalGeneration(DFQVLAPretrainedModel, GenerationMixin, Tra
         self._initialize_flex_scene_encoder(config)
         
         # 8. Initialize VQ-VAE Trajectory Decoder (Phase 2)
-        self._initialize_vqvae(config)
+        if getattr(config, 'include_vqvae', True):
+            self._initialize_vqvae(config)
+        else:
+            self.vqvae_tokenizer = None
 
         # 9. Tie weights if necessary (standard HF practice)
         self.post_init()
@@ -314,7 +320,7 @@ class DFQVLAForConditionalGeneration(DFQVLAPretrainedModel, GenerationMixin, Tra
         
         # Only predict trajectory if we have labels or are explicitly asked (implied by having labels in train time)
         # Note: In inference we usually call predict_future_trajectory manually
-        if (ego_future_xyz is not None and ego_future_rot is not None) or (labels is not None and "ego_future_xyz" in kwargs):
+        if self.action_head is not None and ((ego_future_xyz is not None and ego_future_rot is not None) or (labels is not None and "ego_future_xyz" in kwargs)):
              # Use full hidden states for action head cross-attention
              vlm_context = hidden_states  # [B, S, hidden_size]
              

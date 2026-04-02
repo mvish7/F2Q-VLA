@@ -64,6 +64,10 @@ def load_model_and_processor(config) -> Tuple[Any, Any]:
     hf_config.vqvae_num_embeddings = getattr(config.model, "vqvae_num_embeddings", 768)
     hf_config.vqvae_hidden_dim = getattr(config.model, "vqvae_hidden_dim", 256)
     hf_config.vqvae_embedding_dim = getattr(config.model, "vqvae_embedding_dim", 256)
+    
+    # Inject component inclusion flags
+    hf_config.include_action_head = getattr(config.model, "include_action_head", True)
+    hf_config.include_vqvae = getattr(config.model, "include_vqvae", True)
 
     model = AutoModelForCausalLM.from_pretrained(
         config.model.model_path,
@@ -155,6 +159,16 @@ def apply_freezing(model, config):
                 param.requires_grad = False
         else:
             print("Warning: requested to freeze flex_scene_encoder, but model does not have it.")
+    
+    # 6. Trajectory Projector
+    freeze_traj_projector = getattr(config.model, "freeze_traj_projector", False)
+    if freeze_traj_projector:
+        print("Freezing trajectory projector...")
+        if hasattr(model, "traj_projector") and model.traj_projector is not None:
+            for param in model.traj_projector.parameters():
+                param.requires_grad = False
+        else:
+            print("Warning: requested to freeze traj_projector, but model does not have it.")
 
     # Debug print to verify
     trainable_params = []
@@ -181,18 +195,38 @@ def apply_freezing(model, config):
 
     return model
 
-def setup_lora(model, lora_config):
-    """Apply LoRA configuration to the model."""
+def setup_lora(model, lora_config, vision_lora_config=None):
+    """Apply LoRA configuration to the model.
+    
+    Supports applying LoRA to both LLM and Vision tower independently
+    via a single get_peft_model call with regex-prefixed target modules.
+    
+    Args:
+        model: The model to apply LoRA to.
+        lora_config: LLM LoRA configuration.
+        vision_lora_config: Optional vision tower LoRA configuration.
+    """
     if not lora_config or not lora_config.enabled:
         return model
         
+    # Build target_modules with regex prefixes to disambiguate LLM vs Vision
+    llm_targets = [m for m in lora_config.target_modules]
+    
+    all_targets = llm_targets
+    
+    # Merge vision LoRA targets if enabled
+    if vision_lora_config and vision_lora_config.enabled:
+        vision_targets = [f"vision_tower.*{m}" for m in vision_lora_config.target_modules]
+        all_targets = all_targets + vision_targets
+        print(f"Vision LoRA enabled with targets: {vision_lora_config.target_modules}")
+    
     peft_config = LoraConfig(
         r=lora_config.r,
         lora_alpha=lora_config.lora_alpha,
         lora_dropout=lora_config.lora_dropout,
         use_rslora=lora_config.use_rslora,
         bias=lora_config.bias,
-        target_modules=lora_config.target_modules,
+        target_modules=all_targets,
         task_type="CAUSAL_LM",
         modules_to_save=lora_config.modules_to_save,
     )
@@ -208,6 +242,7 @@ def print_model_parameters(model):
         "Vision Tower": 0,
         "Flex Scene Encoder": 0,
         "Projector": 0,
+        "Traj Projector": 0,
         "Language Model": 0,
         "LM Head": 0,
         "Action Head": 0,
@@ -223,6 +258,8 @@ def print_model_parameters(model):
             key = "Vision Tower"
         elif "flex_scene_encoder" in name:
             key = "Flex Scene Encoder"
+        elif "traj_projector" in name:
+            key = "Traj Projector"
         elif "projector" in name:
             key = "Projector"
         elif "language_model" in name:
