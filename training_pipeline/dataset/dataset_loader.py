@@ -1,41 +1,81 @@
-from datasets import load_from_disk
+import random
+from datasets import load_from_disk, Dataset
 from typing import Any
+import physical_ai_av
 from ..configs.configs import DataConfig, ModelConfig
-from .dataset_formatter import format_data, format_vla_data
+from .dataset_formatter import format_vla_data
 from .data_collator import DataCollator
+from .data_extractor import get_egomotion_for_curr_t
+
 
 class DatasetLoader:
     def __init__(self, config: DataConfig, processor: Any, model_config: ModelConfig = None):
         self.config = config
         self.processor = processor
         self.model_config = model_config
+        self.local_avdi = physical_ai_av.PhysicalAIAVDatasetInterface(cache_dir=config.data_base_path)
+        self.camera_features = [
+            self.local_avdi.features.CAMERA.CAMERA_CROSS_LEFT_120FOV,
+            self.local_avdi.features.CAMERA.CAMERA_FRONT_WIDE_120FOV,
+            self.local_avdi.features.CAMERA.CAMERA_CROSS_RIGHT_120FOV,
+            self.local_avdi.features.CAMERA.CAMERA_FRONT_TELE_30FOV,
+        ]
 
-    def load_dataset(self) -> tuple[Any, Any]:
+    def load_dataset(self) -> tuple[list[dict], list[dict]]:
         """Load and process the dataset."""
         dataset = load_from_disk(self.config.dataset_path)
-        
-        # Split dataset
-        dataset_dict = dataset.train_test_split(
-            test_size=self.config.test_split_ratio, 
-            seed=42, 
-            shuffle=True
-        )
 
-        train_dataset = dataset_dict["train"].shuffle()
-        test_dataset = dataset_dict["test"].shuffle()
-        
-        # Format datasets using the formatter
-        # We NO LONGER map format_vla_data here because we need the raw sample in the DataCollator
-        # to extract trajectory info. The formatting happens inside DataCollator.
-        
-        # Convert to list of dicts to be compatible with DataCollator expecting list
-        # using select/indices or just iteration.
-        # Since we shuffled, we can just return the dataset object if it implements __getitem__
-        # But DataCollator expects a list.
-        train_dataset = [sample for sample in train_dataset]
-        test_dataset = [sample for sample in test_dataset]
-        
+        # Expand into list of dicts (can't use Dataset.map because camera
+        # objects are not Arrow-serializable)
+        samples = self._expand_dataset(dataset)
+
+        # Shuffle and split
+        random.seed(42)
+        random.shuffle(samples)
+        split_idx = int(len(samples) * (1 - self.config.test_split_ratio))
+        train_dataset = samples[:split_idx]
+        test_dataset = samples[split_idx:]
+
         return train_dataset, test_dataset
+
+    def _expand_dataset(self, dataset: Dataset) -> list[dict]:
+        """Expand each sample with egomotion and camera data.
+
+        Returns a list of plain dicts since camera objects (SeekVideoReader)
+        are not Arrow-serializable and cannot live in a HF Dataset.
+        """
+        cached_clip_id = None
+        cached_egomotion = None
+        cached_cameras = None
+        samples = []
+
+        for i in range(len(dataset)):
+            sample = dataset[i]  # returns a fresh dict copy
+            clip_id = sample["clip_id"]
+
+            # Fetch clip-level features once per clip (single-entry cache)
+            if clip_id != cached_clip_id:
+                cached_clip_id = clip_id
+                cached_egomotion = self.local_avdi.get_clip_feature(
+                    clip_id,
+                    self.local_avdi.features.LABELS.EGOMOTION,
+                )
+                cached_cameras = [
+                    self.local_avdi.get_clip_feature(clip_id, cam)
+                    for cam in self.camera_features
+                ]
+
+            ego_history_xyz, ego_history_rot, ego_future_xyz, ego_future_rot = \
+                get_egomotion_for_curr_t(cached_egomotion, clip_id, sample["t_curr"], self.config)
+
+            sample["ego_history_xyz"] = ego_history_xyz
+            sample["ego_history_rot"] = ego_history_rot
+            sample["ego_future_xyz"] = ego_future_xyz
+            sample["ego_future_rot"] = ego_future_rot
+            sample["camera"] = cached_cameras
+            samples.append(sample)
+
+        return samples
 
     def get_collator(self) -> DataCollator:
         """Get the data collator initialized with processor and config."""

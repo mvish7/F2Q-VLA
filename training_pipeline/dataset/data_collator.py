@@ -3,6 +3,9 @@ from PIL import Image
 import os
 import torch
 from ..configs.configs import DataConfig
+import physical_ai_av
+from .data_extractor import get_images_from_sample
+
 
 class DataCollator:
     """Collator that encodes text and image pairs for VLM training."""
@@ -13,6 +16,7 @@ class DataCollator:
         self.config = config
         self.use_flex = use_flex
         self.vqvae_tokenizer = vqvae_tokenizer
+        self.local_avdi = physical_ai_av.PhysicalAIAVDatasetInterface(cache_dir=config.data_base_path)
         self._setup_assistant_masking()
     
     def _setup_assistant_masking(self):
@@ -27,8 +31,8 @@ class DataCollator:
     def _extract_traj_data(self, curr_sample: dict[str, Any]) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
     
         # History
-        h_xyz = torch.tensor(curr_sample["ego_history_xyz"], dtype=torch.float32)
-        h_rot = torch.tensor(curr_sample["ego_history_rot"], dtype=torch.float32)
+        h_xyz = curr_sample["ego_history_xyz"]
+        h_rot = curr_sample["ego_history_rot"]
         
         # Convert 3x3 rotation matrices to 2D continuous yaw
         yaw_h = torch.atan2(h_rot[..., 1, 0], h_rot[..., 0, 0])
@@ -39,8 +43,8 @@ class DataCollator:
         while h_rot.ndim > 2: h_rot = h_rot.squeeze(0)
         
         # Future (Labels)
-        f_xyz = torch.tensor(curr_sample["ego_future_xyz"], dtype=torch.float32)
-        f_rot = torch.tensor(curr_sample["ego_future_rot"], dtype=torch.float32)
+        f_xyz = curr_sample["ego_future_xyz"]
+        f_rot = curr_sample["ego_future_rot"]
         
         # Convert 3x3 rotation matrices to 2D continuous yaw
         yaw_f = torch.atan2(f_rot[..., 1, 0], f_rot[..., 0, 0])
@@ -69,13 +73,20 @@ class DataCollator:
 
         formatted_examples = []
 
+        # extract images from examples
+        all_images = []
+        for sample in examples:
+            image_frames = get_images_from_sample(sample["t_curr"], sample["camera"], self.config)
+            all_images.extend(image_frames)
+
+
         for sample in examples:
             curr_hist_xyz, curr_hist_rot, curr_fut_xyz, curr_fut_rot = self._extract_traj_data(sample)
             
             # Encode future trajectory → 8 VQ-VAE codebook indices
             vqvae_indices = self.vqvae_tokenizer.encode(curr_fut_xyz, curr_fut_rot)
             
-            formatted_sample = format_vla_data(sample, vqvae_indices, use_flex=self.use_flex)
+            formatted_sample = format_vla_data(sample, vqvae_indices, use_flex=self.use_flex, sample_image=all_images[0][0][0])
             formatted_examples.append(formatted_sample)
 
             ego_history_xyz_list.append(curr_hist_xyz)
@@ -91,54 +102,15 @@ class DataCollator:
             for conv in formatted_examples
         ]
 
-        # 2. Process images
-        flat_images = []
-        for idx, sample in enumerate(examples):
-            if self.use_flex:
-                # Flex mode: Load ALL images from image_paths regardless of placeholder count
-                # The Flex encoder needs all 16 images (4 cameras × 4 timestamps)
-                if "image_paths" in sample:
-                    for cam_name, paths in sample["image_paths"].items():
-                        for path in paths:
-                            if self.config.image_base_path and not os.path.isabs(path):
-                                path = os.path.join(self.config.image_base_path, path)
-                            try:
-                                image = Image.open(path).convert("RGB")
-                                flat_images.append(image)
-                            except Exception as e:
-                                print(f"Error loading image {path}: {e}")
-                                flat_images.append(Image.new('RGB', (self.config.image_size_width, self.config.image_size_height), (0, 0, 0)))
-            else:
-                # Legacy mode: Load images based on placeholders in conversation
-                conv = formatted_examples[idx]
-                user_content = conv[1]["content"]
-                
-                for item in user_content:
-                    if item["type"] == "image":
-                        image_path = item["image"]
-                        if self.config.image_base_path and not os.path.isabs(image_path):
-                            image_path = os.path.join(self.config.image_base_path, image_path)
-                        try:
-                            image = Image.open(image_path).convert("RGB")
-                            flat_images.append(image)
-                        except Exception as e:
-                            print(f"Error loading image {image_path}: {e}")
-                            flat_images.append(Image.new('RGB', (self.config.image_size_width, self.config.image_size_height), (0, 0, 0)))
-
         # 3. Tokenize Text & Process Images
         # Processor expects a flat list of images corresponding to <|image_pad|> tokens in sequence
         batch = self.processor(
             text=texts, 
-            images=flat_images if flat_images else None, 
+            images=all_images, 
             return_tensors="pt", 
             padding=True,
             size={"height": self.config.image_size_height, "width": self.config.image_size_width}
         )
-        
-        # Close PIL images to free memory immediately after processing
-        for img in flat_images:
-            img.close()
-        del flat_images
         
         # 4. Prepare Labels for Causal LM
         # Mask everything before assistant content so the model only learns
