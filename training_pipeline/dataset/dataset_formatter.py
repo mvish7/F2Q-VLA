@@ -1,34 +1,7 @@
 import random
 from typing import Any, Dict
+import torch
 
-# Default system message
-DEFAULT_SYSTEM_MESSAGE = """You are a Vision Language Model specialized in image captioning task. Please be thorough and 
-descriptive in your captions. Your task is to analyze the provided image and respond with a detailed caption that
-describes the content of the image."""
-
-# List of user prompts for variation
-CAPTION_PROMPTS = [
-    "please describe in detail what you observe in this image?",
-    "give a detailed explanation of the scene in this picture.",
-    "could you summarize the contents of this image in a great detail?",
-    "how would you describe this image at length to someone who can't see it?",
-    "provide a detailed summary of what this picture shows.",
-    "in a few sentences, explain what's happening in this image.",
-    "could you briefly explain the scene captured in this image?",
-    "describe the key elements and details visible in this picture.",
-    "offer a detailed description of what you notice in this image.",
-    "in 4-5 sentences, summarize various aspects of this photo.",
-    "give a complete overview of what this image is about.",
-    "could you detail the important parts you observe in this picture?",
-    "please share a precise summary of this image.",
-    "write a few lines describing what you see in this photograph.",
-    "summarize the overall scene depicted in this image.",
-    "in 4-5 sentences, describe the important features of this image.",
-    "briefly describe what is happening in this picture.",
-    "what do you see in this image? describe it in a few sentences.",
-    "explain what this image portrays in a short paragraph.",
-    "give a clear and detailed description of this photo."
-]
 
 def get_fields_from_sample(sample: Dict[str, Any]):
     """Extract image path, user text, and assistant text from a sample."""
@@ -40,36 +13,6 @@ def get_fields_from_sample(sample: Dict[str, Any]):
         # pixmo dataset
         return sample["image_path"], random.choice(CAPTION_PROMPTS), sample["caption"]
 
-def format_data(sample: Dict[str, Any], system_message: str = DEFAULT_SYSTEM_MESSAGE) -> list[Dict[str, Any]]:
-    """Format a sample into a conversation list."""
-    # fetch info from sample
-    image_path, user_text, assistant_text = get_fields_from_sample(sample)
-
-    # format the message
-    return [
-        {
-            "role": "system",
-            "content": [{"type": "text", "text": system_message}],
-        },
-        {
-            "role": "user",
-            "content": [
-                {
-                    "type": "image",
-                    "image": image_path,
-                },
-                {
-                    "type": "text",
-                    "text": user_text
-                },
-            ],
-        },
-        {
-            "role": "assistant",
-            "content": [{"type": "text", "text": assistant_text}],
-        },
-    ]
-
 # Trajectory tokens (mirrored from dfq_vla/traj_utils.py to avoid circular imports if needed, 
 # or we can import if the package is installed. For safety in this script, defining here.)
 TRAJ_TOKEN = {
@@ -80,7 +23,8 @@ TRAJ_TOKEN = {
     "future_end": "<|traj_future_end|>",
 }
 
-def format_vla_data(sample: Dict[str, Any], vqvae_indices: list[int], use_flex: bool = False) -> list[Dict[str, Any]]:
+def format_vla_data(sample: Dict[str, Any], vqvae_indices: list[int], use_flex: bool = False,
+                    sample_image:torch.Tensor = None) -> list[Dict[str, Any]]:
     """Format a VLA sample into a conversation list for DFQ VLA.
     
     Args:
@@ -97,32 +41,37 @@ def format_vla_data(sample: Dict[str, Any], vqvae_indices: list[int], use_flex: 
     # 2. User Prompt Components
     user_content = []
     
-    # a. Images from image_paths
-    if "image_paths" in sample:
-        if use_flex:
-            # Flex mode: Single image placeholder for entire scene
-            # All images are still loaded, but represented by one token block
-            # The Flex encoder compresses them into K scene tokens
-            # We pick first image path as placeholder (collator loads all images)
-            first_path = None
-            for cam_name, paths in sample["image_paths"].items():
-                if paths:
-                    first_path = paths[0]
-                    break
-            if first_path:
-                user_content.append({
-                    "type": "image",
-                    "image": first_path,  # Placeholder - collator loads all images
-                })
-        else:
-            # Legacy mode: Per-image placeholders (4 cameras × 4 timestamps = 16)
-            # Order: Camera, then Time
-            for cam_name, paths in sample["image_paths"].items():
-                for path in paths:
-                    user_content.append({
-                        "type": "image",
-                        "image": path,
-                    })
+    # # a. Images from image_paths
+    # if "image_paths" in sample:
+    #     if use_flex:
+    #         # Flex mode: Single image placeholder for entire scene
+    #         # All images are still loaded, but represented by one token block
+    #         # The Flex encoder compresses them into K scene tokens
+    #         # We pick first image path as placeholder (collator loads all images)
+    #         first_path = None
+    #         for cam_name, paths in sample["image_paths"].items():
+    #             if paths:
+    #                 first_path = paths[0]
+    #                 break
+    #         if first_path:
+    #             user_content.append({
+    #                 "type": "image",
+    #                 "image": first_path,  # Placeholder - collator loads all images
+    #             })
+    #     else:
+    #         # Legacy mode: Per-image placeholders (4 cameras × 4 timestamps = 16)
+    #         # Order: Camera, then Time
+    #         for cam_name, paths in sample["image_paths"].items():
+    #             for path in paths:
+    #                 user_content.append({
+    #                     "type": "image",
+    #                     "image": path,
+    #                 })
+    
+    user_content.append({
+        "type": "image",
+        "image": sample_image,  # Placeholder - collator loads all images
+    })
     
     # b. Trajectory History Placeholder
     # Default 16 tokens (1 embedding per waypoint)
