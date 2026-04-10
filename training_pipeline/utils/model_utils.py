@@ -29,7 +29,7 @@ def load_model_and_processor(config) -> Tuple[Any, Any]:
     
     # Load processor
     processor_path = config.model.processor_path or config.model.model_path
-    processor = AutoProcessor.from_pretrained(processor_path, trust_remote_code=True)
+    processor = AutoProcessor.from_pretrained(processor_path, trust_remote_code=True, fix_mistral_regex=True)
     
     # Load Model
     torch_dtype = getattr(torch, config.model.torch_dtype) if hasattr(torch, config.model.torch_dtype) else torch.bfloat16

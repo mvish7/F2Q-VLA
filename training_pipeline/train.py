@@ -1,7 +1,7 @@
 import argparse
 import os
 import torch
-
+from peft import PeftModel
 
 from training_pipeline.configs import load_config, get_training_args
 from training_pipeline.utils import load_model_and_processor, apply_freezing, setup_lora, print_model_parameters
@@ -26,10 +26,13 @@ def main():
     model = apply_freezing(model, config)
     
     # Setup LoRA if enabled
-    if config.lora and config.lora.enabled:
-        print("Setting up LoRA adapters...")
-        vision_lora = getattr(config, 'vision_lora', None)
-        model = setup_lora(model, config.lora, vision_lora_config=vision_lora)
+    if config.training.resume_from_checkpoint:
+        print("Loading LoRA adapters from checkpoint...")
+        model = PeftModel.from_pretrained(model, config.training.resume_from_checkpoint, is_trainable=True)
+    elif config.lora and config.lora.enabled:
+            print("Setting up LoRA adapters...")
+            vision_lora = getattr(config, 'vision_lora', None)
+            model = setup_lora(model, config.lora, vision_lora_config=vision_lora)
     
     # Enable input require grads AFTER LoRA setup so the hook survives PEFT wrapping.
     # This is needed for gradient checkpointing to work with frozen modules (e.g. LLM).

@@ -33,7 +33,7 @@ class ModelConfig:
 @dataclass
 class DataConfig:
     dataset_path: str
-    image_base_path: str = ""  # Base path to prepend to relative image paths
+    data_base_path: str = ""  # Base path to prepend to relative image paths
     test_split_ratio: float = 0.01
     image_size_height: int = 320
     image_size_width: int = 512
@@ -44,6 +44,10 @@ class DataConfig:
     num_cameras: int = 4  # Number of camera views
     num_timestamps: int = 4  # Number of timestamps per camera
     max_len: int = 1024
+    num_history_steps: int = 16
+    num_future_steps: int = 64
+    time_step: float = 0.1
+    num_frames: int = 4
 
 @dataclass
 class LoRAConfig:
@@ -98,6 +102,7 @@ class TrainingConfig:
     use_liger_kernel: bool = False  # Enable Liger Kernel for faster training
     torch_empty_cache_steps: int = None  # Clear CUDA cache every N steps (None = disabled)
     optim: str = "adamw_bnb_8bit"  # Optimizer type: adamw_torch, adamw_bnb_8bit,
+    resume_from_checkpoint: Optional[str] = None
     
 @dataclass
 class VLMTrainingConfig:
