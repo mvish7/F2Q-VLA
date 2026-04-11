@@ -14,26 +14,21 @@ def build_param_groups(model: Any, config: Any) -> list[dict]:
     - **default**: Projector, Flex, Traj MLP, Action Head, LM Head, etc.
       Uses `config.training.learning_rate`.
     - **llm_lora**: LLM LoRA adapter weights (lora_A, lora_B).
-      Uses `config.lora.learning_rate` (falls back to default).
+      Uses `config.training.llm_learning_rate` (falls back to default).
     - **vision_lora**: Vision tower LoRA adapter weights.
-      Uses `config.vision_lora.learning_rate` (falls back to default).
+      Uses `config.training.vision_enc_learning_rate` (falls back to default).
     
     Args:
         model: The full model (potentially PEFT-wrapped).
-        config: VLMTrainingConfig with training/lora/vision_lora sections.
+        config: VLMTrainingConfig with training section containing per-module LRs.
         
     Returns:
         List of parameter group dicts for the optimizer.
     """
     base_lr = config.training.learning_rate
-    
-    llm_lora_lr = base_lr
-    if config.lora and config.lora.learning_rate is not None:
-        llm_lora_lr = config.lora.learning_rate
-    
-    vision_lora_lr = base_lr
-    if config.vision_lora and config.vision_lora.learning_rate is not None:
-        vision_lora_lr = config.vision_lora.learning_rate
+
+    llm_lora_lr = getattr(config.training, 'llm_learning_rate', None) or base_lr
+    vision_lora_lr = getattr(config.training, 'vision_enc_learning_rate', None) or base_lr
     
     groups = {"default": [], "llm_lora": [], "vision_lora": []}
     

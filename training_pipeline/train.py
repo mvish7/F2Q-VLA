@@ -31,8 +31,7 @@ def main():
         model = PeftModel.from_pretrained(model, config.training.resume_from_checkpoint, is_trainable=True)
     elif config.lora and config.lora.enabled:
             print("Setting up LoRA adapters...")
-            vision_lora = getattr(config, 'vision_lora', None)
-            model = setup_lora(model, config.lora, vision_lora_config=vision_lora)
+            model = setup_lora(model, config.lora)
     
     # Enable input require grads AFTER LoRA setup so the hook survives PEFT wrapping.
     # This is needed for gradient checkpointing to work with frozen modules (e.g. LLM).

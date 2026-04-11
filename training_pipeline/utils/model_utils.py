@@ -195,31 +195,59 @@ def apply_freezing(model, config):
 
     return model
 
-def setup_lora(model, lora_config, vision_lora_config=None):
+def _expand_lora_targets(model, lora_config):
+    """Resolve short module names to fully-qualified layer names.
+
+    When expand_target_modules is False, returns lora_config.target_modules as-is.
+    When True, walks the model architecture to expand llm_target_modules and
+    vision_enc_target_modules into fully-qualified paths.
+    """
+    if not lora_config.expand_target_modules:
+        return lora_config.target_modules
+
+    expanded = []
+    llm_shorts = set(lora_config.llm_target_modules)
+    vision_shorts = set(lora_config.vision_enc_target_modules)
+
+    # Expand LLM targets: language_model.model.layers.N.self_attn.q_proj, etc.
+    if llm_shorts and hasattr(model, "language_model"):
+        for name, module in model.language_model.named_modules():
+            if not name:
+                continue
+            short = name.rsplit(".", 1)[-1]
+            if short in llm_shorts:
+                expanded.append(f"language_model.{name}")
+
+    # Expand vision encoder targets: vision_tower.model.layer.N.attention.q_proj, etc.
+    if vision_shorts and hasattr(model, "vision_tower"):
+        for name, module in model.vision_tower.named_modules():
+            if not name:
+                continue
+            short = name.rsplit(".", 1)[-1]
+            if short in vision_shorts:
+                expanded.append(f"vision_tower.{name}")
+
+    llm_count = sum(1 for t in expanded if t.startswith("language_model."))
+    vis_count = sum(1 for t in expanded if t.startswith("vision_tower."))
+    print(f"Expanded LoRA targets: {llm_count} LLM modules, {vis_count} vision modules ({len(expanded)} total)")
+    return expanded
+
+
+def setup_lora(model, lora_config):
     """Apply LoRA configuration to the model.
-    
-    Supports applying LoRA to both LLM and Vision tower independently
-    via a single get_peft_model call with regex-prefixed target modules.
-    
+
+    Supports applying LoRA to both LLM and Vision tower via a single
+    get_peft_model call using fully-resolved target module names.
+
     Args:
         model: The model to apply LoRA to.
-        lora_config: LLM LoRA configuration.
-        vision_lora_config: Optional vision tower LoRA configuration.
+        lora_config: LoRA configuration with optional expand_target_modules.
     """
     if not lora_config or not lora_config.enabled:
         return model
-        
-    # Build target_modules with regex prefixes to disambiguate LLM vs Vision
-    llm_targets = [m for m in lora_config.target_modules]
-    
-    all_targets = llm_targets
-    
-    # Merge vision LoRA targets if enabled
-    if vision_lora_config and vision_lora_config.enabled:
-        vision_targets = [f"vision_tower.*{m}" for m in vision_lora_config.target_modules]
-        all_targets = all_targets + vision_targets
-        print(f"Vision LoRA enabled with targets: {vision_lora_config.target_modules}")
-    
+
+    all_targets = _expand_lora_targets(model, lora_config)
+
     peft_config = LoraConfig(
         r=lora_config.r,
         lora_alpha=lora_config.lora_alpha,
@@ -228,9 +256,10 @@ def setup_lora(model, lora_config, vision_lora_config=None):
         bias=lora_config.bias,
         target_modules=all_targets,
         task_type="CAUSAL_LM",
+        ensure_weight_tying=True,
         modules_to_save=lora_config.modules_to_save,
     )
-    
+
     model = get_peft_model(model, peft_config)
     model.print_trainable_parameters()
     return model
