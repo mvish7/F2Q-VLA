@@ -61,7 +61,8 @@ class VQVAETrajectoryTokenizer(nn.Module):
             k.replace("_orig_mod.", ""): v
             for k, v in state_dict.items()
         }
-        self.model.load_state_dict(state_dict)
+        self.model.load_state_dict(state_dict, assign=True)
+        self.model.to(torch.bfloat16)
 
         # Freeze completely
         self.eval()
@@ -91,7 +92,7 @@ class VQVAETrajectoryTokenizer(nn.Module):
         cos_yaw = rot[:, 0:1]  # (T, 1)
 
         # Build (T, 5) feature: [x, y, z, sin_yaw, cos_yaw]
-        features = torch.cat([xyz, sin_yaw, cos_yaw], dim=1)  # (T, 5)
+        features = torch.cat([xyz, sin_yaw, cos_yaw], dim=1).to(torch.bfloat16)  # (T, 5)
 
         # Transpose to (1, 5, T) for VQ-VAE encoder
         features = features.T.unsqueeze(0).to(dtype=self.model.quantizer.embeddings.dtype, device=self.model.quantizer.embeddings.device)
@@ -117,7 +118,7 @@ class VQVAETrajectoryTokenizer(nn.Module):
             and splits must be handled in action head.
         """
         # Ensure indices match the device of the quantizer
-        device = self.model.quantizer.embeddings.weight.device
+        device = self.model.quantizer.embeddings.device
         indices = indices.to(device)
         
         # Decode: [B, 5, 64]

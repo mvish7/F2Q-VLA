@@ -85,6 +85,7 @@ class DFQVLAPretrainedModel(PreTrainedModel):
 class DFQVLAForConditionalGeneration(DFQVLAPretrainedModel, GenerationMixin, TrajectoryFusionMixin):
     _checkpoint_conversion_mapping = {}
     _tied_weights_keys = ["lm_head.weight"]
+    _keys_to_ignore_on_load_missing = [r"^vqvae_tokenizer\..*"]
     config_class = DFQVLAConfig
     accepts_loss_kwargs = False
     _supports_flash_attn_2 = True
@@ -341,19 +342,19 @@ class DFQVLAForConditionalGeneration(DFQVLAPretrainedModel, GenerationMixin, Tra
                  found_all = True
                  
                  for b in range(B):
-                     matches = (input_ids[b] == start_id).nonzero(as_tuple=True)[0]
-                     if len(matches) > 0:
-                         start_pos = matches[-1].item()
-                         for i in range(8):
-                             if start_pos + 1 + i < input_ids.shape[1]:
-                                 token = input_ids[b, start_pos + 1 + i].item()
-                                 if traj_start_idx <= token < traj_start_idx + getattr(self.config, 'traj_vocab_size', 768):
-                                     vqvae_indices[b, i] = token - traj_start_idx
-                                 else:
-                                     found_all = False
-                                     break
-                     else:
-                         found_all = False
+                    matches = (input_ids[b] == start_id).nonzero(as_tuple=True)[0]
+                    if len(matches) > 0:
+                        start_pos = matches[-1].item()
+                        for i in range(8):
+                            if start_pos + 1 + i < input_ids.shape[1]:
+                                token = input_ids[b, start_pos + 1 + i].item()
+                                if traj_start_idx <= token < traj_start_idx + getattr(self.config, 'traj_vocab_size', 768):
+                                    vqvae_indices[b, i] = token - traj_start_idx
+                                else:
+                                    found_all = False
+                                    break
+                    else:
+                        found_all = False
                  
                  if found_all:
                      with torch.no_grad():
@@ -420,7 +421,7 @@ class DFQVLAForConditionalGeneration(DFQVLAPretrainedModel, GenerationMixin, Tra
                 - "rot2d": 2D rotation representation [B, num_queries, 2]
         """
         return self.action_head(
-            vlm_context=vlm_context,
+            vlm_context,
             base_traj=base_traj,
             normalize_rot=normalize_rot,
             memory_key_padding_mask=attention_mask,
