@@ -91,8 +91,9 @@ def format_vla_data(sample: Dict[str, Any], vqvae_indices: list[int], use_flex: 
     })
 
     # 3. Assistant Target — VQ-VAE trajectory indices
-    traj_tokens = " ".join(f"<i{idx}>" for idx in vqvae_indices)
-    assistant_text = f"{TRAJ_TOKEN['future_start']} {traj_tokens} {TRAJ_TOKEN['future_end']}"
+    traj_tokens = "".join(f"<i{idx}>" for idx in vqvae_indices)
+    assistant_text = f"{TRAJ_TOKEN['future_start']}{traj_tokens}{TRAJ_TOKEN['future_end']}"
+    assistant_text = assistant_text.replace(" ", "")
     
     return [
         {

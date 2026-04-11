@@ -10,13 +10,14 @@ from .data_extractor import get_images_from_sample
 class DataCollator:
     """Collator that encodes text and image pairs for VLM training."""
     
-    def __init__(self, processor: Any, image_token_id: int, config: DataConfig, use_flex: bool = False, vqvae_tokenizer=None):
+    def __init__(self, processor: Any, image_token_id: int, config: DataConfig, use_flex: bool = False, vqvae_tokenizer=None, camera_features=None):
         self.processor = processor
         self.image_token_id = image_token_id
         self.config = config
         self.use_flex = use_flex
         self.vqvae_tokenizer = vqvae_tokenizer
         self.local_avdi = physical_ai_av.PhysicalAIAVDatasetInterface(cache_dir=config.data_base_path)
+        self.camera_features = camera_features or []
         self._setup_assistant_masking()
     
     def _setup_assistant_masking(self):
@@ -73,11 +74,23 @@ class DataCollator:
 
         formatted_examples = []
 
-        # extract images from examples
+        # Load camera features lazily per batch to avoid pinning all
+        # SeekVideoReader objects in RAM for the entire training run.
         all_images = []
         for sample in examples:
-            image_frames = get_images_from_sample(sample["t_curr"], sample["camera"], self.config)
+            cameras = [
+                self.local_avdi.get_clip_feature(sample["clip_id"], cam)
+                for cam in self.camera_features
+            ]
+            image_frames = get_images_from_sample(sample["t_curr"], cameras, self.config)
             all_images.extend(image_frames)
+            # Explicitly close SeekVideoReaders to free PyAV containers
+            # and BytesIO buffers. Python's del/GC doesn't reliably free
+            # the underlying C-level resources.
+            for cam in cameras:
+                if hasattr(cam, "close"):
+                    cam.close()
+            del cameras, image_frames
 
 
         for sample in examples:
@@ -111,6 +124,8 @@ class DataCollator:
             padding=True,
             size={"height": self.config.image_size_height, "width": self.config.image_size_width}
         )
+        # Free large CPU intermediates now that the processor has consumed them
+        del all_images, texts, formatted_examples
         
         # 4. Prepare Labels for Causal LM
         # Mask everything before assistant content so the model only learns

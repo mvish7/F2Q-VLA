@@ -94,8 +94,9 @@ def get_images_from_sample(tstamp, camera_features, config):
     for cam_feature in camera_features:
         frames, frame_timestamps = cam_feature.decode_images_from_timestamps(image_timestamps)
 
-        # Convert to (num_frames, 3, H, W) for model input
-        frames_tensor = torch.from_numpy(frames)
+        # .copy() decouples from the decode buffer so it can be freed by GC
+        frames_tensor = torch.from_numpy(frames.copy())
+        del frames  # release decoded numpy buffer immediately
         frames_tensor = rearrange(frames_tensor, "t h w c -> t c h w")
 
         # Extend the list with individual frame tensors of shape (3, H, W)

@@ -46,24 +46,22 @@ class DatasetLoader:
         """
         cached_clip_id = None
         cached_egomotion = None
-        cached_cameras = None
         samples = []
 
         for i in range(len(dataset)):
             sample = dataset[i]  # returns a fresh dict copy
             clip_id = sample["clip_id"]
 
-            # Fetch clip-level features once per clip (single-entry cache)
+            # Fetch clip-level egomotion once per clip (single-entry cache)
             if clip_id != cached_clip_id:
                 cached_clip_id = clip_id
                 cached_egomotion = self.local_avdi.get_clip_feature(
                     clip_id,
                     self.local_avdi.features.LABELS.EGOMOTION,
                 )
-                cached_cameras = [
-                    self.local_avdi.get_clip_feature(clip_id, cam)
-                    for cam in self.camera_features
-                ]
+                # NOTE: Camera features are NOT loaded here to avoid pinning
+                # SeekVideoReader objects for every clip in RAM. They are
+                # loaded lazily per batch in the DataCollator.
 
             ego_history_xyz, ego_history_rot, ego_future_xyz, ego_future_rot = \
                 get_egomotion_for_curr_t(cached_egomotion, clip_id, sample["t_curr"], self.config)
@@ -72,7 +70,6 @@ class DatasetLoader:
             sample["ego_history_rot"] = ego_history_rot
             sample["ego_future_xyz"] = ego_future_xyz
             sample["ego_future_rot"] = ego_future_rot
-            sample["camera"] = cached_cameras
             samples.append(sample)
 
         return samples
@@ -110,4 +107,8 @@ class DatasetLoader:
                 embedding_dim=getattr(self.model_config, "vqvae_embedding_dim", 256),
             )
 
-        return DataCollator(self.processor, image_token_id, self.config, use_flex=use_flex, vqvae_tokenizer=vqvae_tokenizer)
+        return DataCollator(
+            self.processor, image_token_id, self.config,
+            use_flex=use_flex, vqvae_tokenizer=vqvae_tokenizer,
+            camera_features=self.camera_features,
+        )
