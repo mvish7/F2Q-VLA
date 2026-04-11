@@ -59,17 +59,10 @@ class LoRAConfig:
     use_rslora: bool = True
     target_modules: List[str] = field(default_factory=lambda: ["q_proj", "v_proj"])
     modules_to_save: List[str] = field(default_factory=list)
-    learning_rate: Optional[float] = None  # Per-group LR for LLM LoRA weights (None = use training.learning_rate)
-
-@dataclass
-class VisionLoRAConfig:
-    """LoRA configuration for the vision tower (separate from LLM LoRA)."""
-    enabled: bool = False
-    r: int = 16
-    lora_alpha: int = 32
-    lora_dropout: float = 0.05
-    target_modules: List[str] = field(default_factory=lambda: ["q_proj", "k_proj", "v_proj", "o_proj", "up_proj", "down_proj"])
-    learning_rate: Optional[float] = None  # Per-group LR for Vision LoRA weights (None = use training.learning_rate)
+    # Target module expansion: resolve short names to fully-qualified layer names
+    expand_target_modules: bool = False
+    llm_target_modules: List[str] = field(default_factory=list)
+    vision_enc_target_modules: List[str] = field(default_factory=list)
 
 @dataclass
 class QLoRAConfig:
@@ -85,6 +78,8 @@ class TrainingConfig:
     output_dir: str
     num_train_epochs: int = 1
     learning_rate: float = 3e-4
+    llm_learning_rate: Optional[float] = None       # LLM LoRA LR (None → falls back to learning_rate)
+    vision_enc_learning_rate: Optional[float] = None # Vision encoder LoRA LR (None → falls back to learning_rate)
     per_device_train_batch_size: int = 4
     per_device_eval_batch_size: int = 4
     gradient_accumulation_steps: int = 32
@@ -111,4 +106,3 @@ class VLMTrainingConfig:
     training: TrainingConfig
     lora: Optional[LoRAConfig] = None
     qlora: Optional[QLoRAConfig] = None
-    vision_lora: Optional[VisionLoRAConfig] = None

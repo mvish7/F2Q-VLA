@@ -1,49 +1,66 @@
 model:
-  model_path: "/media/vishal/workspace/projects/VLA/dfq_checkpoints/local_densecaption_400k_merged"
+  model_path: "/media/vishal/workspace/projects/VLA/checkpoints/stage1_merged/"
   type: "dfq_vla"
   freeze_vision_tower: true
   freeze_llm: false
   freeze_projector: false
   freeze_action_head: false
+  include_action_head: true
+  include_vqvae: true
+  loss_weights:
+    text: 1.0
+    xyz: 0.1
+    rot: 0.1
 
 data:
-  dataset_path: "/media/vishal/datasets/alpamayo_r1/ar1_hf_with_coc_reasoning"
-  image_base_path: "/media/vishal/datasets/alpamayo_r1"
+  dataset_path: "/media/vishal/datasets/ar1_coc_dataset/extracted/ar1_hf_dataset_new/"
+  data_base_path: "/media/vishal/datasets/ar1_coc_dataset/"
   test_split_ratio: 0.01
-  image_size_height: 360
-  image_size_width: 640
-  dataloader_num_workers: 4
-  # max_len: 1024
+  image_size_height: 320
+  image_size_width: 512
+  dataloader_num_workers: 12
+  dataloader_pin_memory: true
+  dataloader_prefetch_factor: 3
+  max_len: 1024
+  num_history_steps: 16
+  num_future_steps: 64
+  time_step: 0.1
+  num_frames: 4
 
 training:
-  output_dir: "/media/vishal/workspace/projects/VLA/checkpoints/vla_wo_flex_testing"
+  output_dir: "/media/vishal/workspace/projects/VLA/checkpoints/stage2_vla"
   num_train_epochs: 1
-  learning_rate: 3.0e-4
+  learning_rate: 1.0e-4  # Default: Action Head, Flex, Projector, Traj MLP
+  llm_learning_rate: 2.0e-5  # LLM LoRA adapters
   weight_decay: 0.01
-  per_device_train_batch_size: 1
-  gradient_accumulation_steps: 64
+  per_device_train_batch_size: 4
+  gradient_accumulation_steps: 16
   report_to: "tensorboard"
   save_steps: 500
-  logging_steps: 100
+  logging_steps: 10
+  gradient_checkpointing: true
+  bf16: true
+  optim: "adamw_bnb_8bit"
   use_liger_kernel: true
-  torch_empty_cache_steps: 1
-  optim: "adamw_torch_fused" 
+  torch_empty_cache_steps: 4
+  resume_from_checkpoint: ""
+
+qlora:
+  enabled: false
+  load_in_4bit: false
+  bnb_4bit_quant_type: "nf4"
+  bnb_4bit_compute_dtype: "bfloat16"
+  bnb_4bit_use_double_quant: true
+
 lora:
   enabled: true
-  r: 16
-  lora_alpha: 32
-  target_modules:
-    - "q_proj"
-    - "k_proj"
-    - "v_proj"
-    - "o_proj"
-    - "gate_proj"
-    - "up_proj"
-    - "down_proj"
-    - "embed_tokens"
-    - "lm_head"
-    # - "Linear"
+  r: 64
+  lora_alpha: 128
+  expand_target_modules: true
+  llm_target_modules: ["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj", "lm_head"]
+  vision_enc_target_modules: []
   modules_to_save:
-    - "action_head"
     - "flex_scene_encoder"
-    
+    - "action_head"
+    - "projector"
+    - "traj_projector"
