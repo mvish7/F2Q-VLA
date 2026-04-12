@@ -28,8 +28,8 @@ class DFQVLALoss(nn.Module):
         self.loss_weights = loss_weights
         
         # Loss functions
-        self.xyz_loss_fn = nn.L1Loss(reduction='mean')
-        self.rot_loss_fn = nn.L1Loss(reduction='mean')
+        self.xyz_loss_fn = nn.L1Loss(reduction='none')
+        self.rot_loss_fn = nn.L1Loss(reduction='none')
         
     def forward(
         self,
@@ -69,7 +69,8 @@ class DFQVLALoss(nn.Module):
         if pred_xyz is not None and target_xyz is not None:
             # Cast target to match prediction dtype (e.g., bfloat16)
             target_xyz = target_xyz.to(dtype=pred_xyz.dtype)
-            xyz_loss = self.xyz_loss_fn(pred_xyz, target_xyz)
+            target_xyz = target_xyz / 100.0
+            xyz_loss = self.xyz_loss_fn(pred_xyz, target_xyz).sum(dim=(1,2)).mean()
             combined_loss += self.loss_weights.get("xyz", 1.0) * xyz_loss
             losses["xyz_loss"] = xyz_loss
             
@@ -79,7 +80,7 @@ class DFQVLALoss(nn.Module):
         if pred_rot is not None and target_rot is not None:
             # Cast target to match prediction dtype
             target_rot = target_rot.to(dtype=pred_rot.dtype)
-            rot_loss = self.rot_loss_fn(pred_rot, target_rot)
+            rot_loss = self.rot_loss_fn(pred_rot, target_rot).sum(dim=(1,2)).mean()
             combined_loss += self.loss_weights.get("rot", 1.0) * rot_loss
             losses["rot_loss"] = rot_loss
             
