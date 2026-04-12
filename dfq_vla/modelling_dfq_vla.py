@@ -58,6 +58,7 @@ class DFQVLAOutputWithPast(ModelOutput):
         `past_key_values` input) to speed up sequential decoding.
     rope_deltas (`torch.LongTensor` of shape `(batch_size, )`, *optional*):
         The rope index difference between sequence length and multimodal rope.
+    text_loss, xyz_loss, rot_loss: Individual sub-loss components for logging.
     """
 
     loss: Optional[torch.FloatTensor] = None
@@ -66,6 +67,9 @@ class DFQVLAOutputWithPast(ModelOutput):
     hidden_states: Optional[tuple[torch.FloatTensor]] = None
     attentions: Optional[tuple[torch.FloatTensor]] = None
     rope_deltas: Optional[torch.LongTensor] = None
+    text_loss: Optional[torch.FloatTensor] = None
+    xyz_loss: Optional[torch.FloatTensor] = None
+    rot_loss: Optional[torch.FloatTensor] = None
 
 
 class DFQVLAPretrainedModel(PreTrainedModel):
@@ -306,6 +310,7 @@ class DFQVLAForConditionalGeneration(DFQVLAPretrainedModel, GenerationMixin, Tra
         logits = self.lm_head(hidden_states[:, slice_indices, :])
 
         loss = None
+        loss_output = None
         
         # Calculate Causal LM Loss
         lm_loss = None
@@ -394,6 +399,9 @@ class DFQVLAForConditionalGeneration(DFQVLAPretrainedModel, GenerationMixin, Tra
             past_key_values=outputs.past_key_values,
             hidden_states=outputs.hidden_states if output_hidden_states else None,
             attentions=outputs.attentions if output_attentions else None,
+            text_loss=loss_output.text_loss if loss_output is not None else None,
+            xyz_loss=loss_output.xyz_loss if loss_output is not None else None,
+            rot_loss=loss_output.rot_loss if loss_output is not None else None,
         )
     
     def predict_future_trajectory(

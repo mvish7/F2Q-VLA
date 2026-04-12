@@ -56,19 +56,22 @@ class VLMTrainer(SFTTrainer):
         
         self.optimizer = optimizer_cls(param_groups, **optimizer_kwargs)
         return self.optimizer
+    
+    def compute_loss(self, model, inputs, return_outputs=False, num_items_in_batch=None):
+        """Override to extract and log sub-losses (text, xyz, rot) to TensorBoard."""
+        (loss, outputs) = super().compute_loss(
+            model, inputs, return_outputs=True, num_items_in_batch=num_items_in_batch,
+        )
         
-    def training_step(self, model, inputs, num_items_in_batch=None):
-        """Override training_step with NaN gradient detection."""
-        # Aggressive memory cleanup before processing
-        gc.collect()
-        if torch.cuda.is_available():
-            torch.cuda.empty_cache()
-            torch.cuda.synchronize()
+        # Log individual sub-losses when available
+        if hasattr(outputs, "text_loss") and outputs.text_loss is not None:
+            self._metrics["text_loss"].append(outputs.text_loss.detach().item())
+        if hasattr(outputs, "xyz_loss") and outputs.xyz_loss is not None:
+            self._metrics["xyz_loss"].append(outputs.xyz_loss.detach().item())
+        if hasattr(outputs, "rot_loss") and outputs.rot_loss is not None:
+            self._metrics["rot_loss"].append(outputs.rot_loss.detach().item())
         
-        # Call parent training_step (forward + backward)
-        loss = super().training_step(model, inputs, num_items_in_batch)
-        
-        return loss
+        return (loss, outputs) if return_outputs else loss
         
     def save_model(self, output_dir=None, _internal_call=False):
         """Override save_model to also save our custom config."""
