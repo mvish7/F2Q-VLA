@@ -68,6 +68,8 @@ def load_model_and_processor(config) -> Tuple[Any, Any]:
     # Inject component inclusion flags
     hf_config.include_action_head = getattr(config.model, "include_action_head", True)
     hf_config.include_vqvae = getattr(config.model, "include_vqvae", True)
+    hf_config.scheduled_sampling_prob = getattr(config.model, "scheduled_sampling_prob", 0.0)
+    hf_config.action_head_grad_scale = getattr(config.model, "action_head_grad_scale", 0.1)
 
     model = AutoModelForCausalLM.from_pretrained(
         config.model.model_path,

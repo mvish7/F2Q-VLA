@@ -315,6 +315,14 @@ class DFQVLAForConditionalGeneration(DFQVLAPretrainedModel, GenerationMixin, Tra
         # Calculate Causal LM Loss
         lm_loss = None
         if labels is not None:
+            # # Assuming you calculate text_loss manually
+            # text_loss = F.cross_entropy(logits.view(-1, 152442), labels.view(-1), ignore_index=-100)
+
+            # # Add this debug print!
+            # active_tokens = (labels != -100).sum()
+            # print(f"Raw Text Loss: {text_loss.item()}")
+            # print(f"Active Tokens: {active_tokens.item()}")
+            # print(f"Loss per Token: {(text_loss / active_tokens).item()}")
             lm_loss = self.loss_function(logits=logits, labels=labels, vocab_size=self.config.text_config.vocab_size)
             
         # Trajectory Prediction and Loss
@@ -327,8 +335,13 @@ class DFQVLAForConditionalGeneration(DFQVLAPretrainedModel, GenerationMixin, Tra
         # Only predict trajectory if we have labels or are explicitly asked (implied by having labels in train time)
         # Note: In inference we usually call predict_future_trajectory manually
         if self.action_head is not None and ((ego_future_xyz is not None and ego_future_rot is not None) or (labels is not None and "ego_future_xyz" in kwargs)):
-             # Use full hidden states for action head cross-attention
-             vlm_context = hidden_states  # [B, S, hidden_size]
+             # Scale gradients flowing from action_head back to LLM.
+             # Traj loss gradients are ~7x larger than text loss, so without
+             # scaling they dominate the shared LLM LoRA weights and hurt
+             # token prediction accuracy.
+             # Forward: full hidden_states. Backward: attenuated by grad_scale.
+             grad_scale = getattr(self.config, 'action_head_grad_scale', 0.1)
+             vlm_context = hidden_states * grad_scale + hidden_states.detach() * (1 - grad_scale)
              
              # Create memory_key_padding_mask for action head (True = padded/ignored)
              memory_key_padding_mask = None
@@ -341,8 +354,21 @@ class DFQVLAForConditionalGeneration(DFQVLAPretrainedModel, GenerationMixin, Tra
                  B = input_ids.shape[0]
                  start_id = self.config.traj_token_ids["future_start"]
                  traj_start_idx = self.config.traj_token_start_idx
+                 traj_vocab_size = getattr(self.config, 'traj_vocab_size', 768)
                  
-                 # Prepare indices tensor [B, 8]
+                 # Scheduled sampling: use LLM predictions instead of GT with some probability
+                 use_predicted = (
+                     self.training
+                     and getattr(self.config, 'scheduled_sampling_prob', 0.0) > 0
+                     and torch.rand(1).item() < self.config.scheduled_sampling_prob
+                 )
+                 
+                 if use_predicted:
+                     source_ids = logits.argmax(dim=-1)  # [B, S]
+                 else:
+                     source_ids = input_ids
+                 
+                 # Extract indices: find future_start marker, read next 8 tokens
                  vqvae_indices = torch.zeros(B, 8, dtype=torch.long, device=input_ids.device)
                  found_all = True
                  
@@ -351,9 +377,9 @@ class DFQVLAForConditionalGeneration(DFQVLAPretrainedModel, GenerationMixin, Tra
                     if len(matches) > 0:
                         start_pos = matches[-1].item()
                         for i in range(8):
-                            if start_pos + 1 + i < input_ids.shape[1]:
-                                token = input_ids[b, start_pos + 1 + i].item()
-                                if traj_start_idx <= token < traj_start_idx + getattr(self.config, 'traj_vocab_size', 768):
+                            if start_pos + 1 + i < source_ids.shape[1]:
+                                token = source_ids[b, start_pos + 1 + i].item()
+                                if traj_start_idx <= token < traj_start_idx + traj_vocab_size:
                                     vqvae_indices[b, i] = token - traj_start_idx
                                 else:
                                     found_all = False

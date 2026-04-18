@@ -20,6 +20,8 @@ class ModelConfig:
     # Component inclusion (set False to exclude from model entirely)
     include_action_head: bool = True
     include_vqvae: bool = True
+    scheduled_sampling_prob: float = 0.0  # Prob of using LLM predictions for VQ-VAE decoding (0=teacher forcing)
+    action_head_grad_scale: float = 0.1  # Scale factor for gradients from action_head → LLM (0=detach, 1=full)
     
     # Loss weights
     loss_weights: dict = field(default_factory=lambda: {"text": 1.0, "xyz": 0.001, "rot": 0.001})

@@ -29,6 +29,8 @@ class DFQVLAConfig(PretrainedConfig):
             traj_token_ids: dict = None,  # Mapping for special tokens
             traj_input_dim: int = 5,  # Per-waypoint feature dim (xyz + yaw)
             # Action head config (for future trajectory prediction)
+            scheduled_sampling_prob: float = 0.0,  # Prob of using LLM predictions vs GT for VQ-VAE decoding
+            action_head_grad_scale: float = 0.1,  # Scale factor for gradients flowing from action_head back to LLM
             num_action_queries: int = 64,  # Number of future waypoints
             num_action_layers: int = 4,  # Transformer decoder layers
             action_nhead: int = 16,  # Attention heads
@@ -79,6 +81,8 @@ class DFQVLAConfig(PretrainedConfig):
         self.traj_token_start_idx = traj_token_start_idx
         self.traj_token_ids = traj_token_ids
         self.traj_input_dim = traj_input_dim
+        self.scheduled_sampling_prob = scheduled_sampling_prob
+        self.action_head_grad_scale = action_head_grad_scale
         
         # Action head config
         self.num_action_queries = num_action_queries
