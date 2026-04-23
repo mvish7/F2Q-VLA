@@ -1,5 +1,6 @@
 import argparse
 import os
+from pathlib import Path
 import torch
 from peft import PeftModel
 
@@ -25,13 +26,16 @@ def main():
     print("Applying freezing strategy...")
     model = apply_freezing(model, config)
     
-    # Setup LoRA if enabled
-    if config.training.resume_from_checkpoint:
-        print("Loading LoRA adapters from checkpoint...")
-        model = PeftModel.from_pretrained(model, config.training.resume_from_checkpoint, is_trainable=True)
+    # Setup LoRA / resume checkpoint
+    resume_path = config.training.resume_from_checkpoint
+    is_lora_checkpoint = resume_path and (Path(resume_path) / "adapter_config.json").exists()
+
+    if is_lora_checkpoint:
+        print(f"Loading LoRA adapters from {resume_path}...")
+        model = PeftModel.from_pretrained(model, resume_path, is_trainable=True)
     elif config.lora and config.lora.enabled:
-            print("Setting up LoRA adapters...")
-            model = setup_lora(model, config.lora)
+        print("Setting up LoRA adapters...")
+        model = setup_lora(model, config.lora)
     
     # Enable input require grads AFTER LoRA setup so the hook survives PEFT wrapping.
     # This is needed for gradient checkpointing to work with frozen modules (e.g. LLM).
@@ -62,8 +66,12 @@ def main():
     print_model_parameters(model)
 
     # Train
+    # Resume from full checkpoint (not LoRA — that was handled above)
     print("Starting training...")
-    trainer.train()
+    full_ckpt = config.training.resume_from_checkpoint if not is_lora_checkpoint else None
+    if full_ckpt:
+        print(f"Resuming from full checkpoint: {full_ckpt}")
+    trainer.train(resume_from_checkpoint=full_ckpt)
     
     # Save Model
     print(f"Saving model to {config.training.output_dir}...")
