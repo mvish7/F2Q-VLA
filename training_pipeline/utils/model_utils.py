@@ -112,7 +112,15 @@ def load_model_and_processor(config) -> Tuple[Any, Any]:
     return model, processor
 
 def apply_freezing(model, config):
-    """Apply freezing strategies based on configuration."""
+    """Apply freezing strategies based on configuration.
+    
+    Modules listed in config.lora.modules_to_save are protected from freezing
+    so they remain trainable even when their parent block is frozen.
+    """
+    # Collect module names that should stay trainable regardless of block-level freezing
+    protected = set()
+    if config.lora and config.lora.modules_to_save:
+        protected = set(config.lora.modules_to_save)
     
     # 1. Vision Tower
     if config.model.freeze_vision_tower:
@@ -123,16 +131,15 @@ def apply_freezing(model, config):
     # 2. Language Model (LLM)
     if config.model.freeze_llm:
         print("Freezing language model...")
-        for param in model.language_model.parameters():
+        for name, param in model.language_model.named_parameters():
+            if any(mod in name for mod in protected):
+                continue
             param.requires_grad = False
-            
-        # Freezing the LLM usually means freezing the LM head as well, unless specified otherwise
-        # But often we want to train the head if we are fine-tuning. 
-        # For now, let's treat lm_head as part of the LLM block unless we want to be very specific.
-        # If the user wants to train ONLY the head, they might use LoRA or just freeze the body.
-        # Given the config structure, we'll freeze the lm_head here too if freeze_llm is True.
-        for param in model.lm_head.parameters():
-            param.requires_grad = False
+
+        # Freeze lm_head unless it is protected via modules_to_save
+        if "lm_head" not in protected:
+            for param in model.lm_head.parameters():
+                param.requires_grad = False
 
     # 3. Projector
     if config.model.freeze_projector:
@@ -249,6 +256,12 @@ def setup_lora(model, lora_config):
         return model
 
     all_targets = _expand_lora_targets(model, lora_config)
+
+    # No LoRA target modules → skip PEFT wrapping entirely.
+    # modules_to_save are handled by apply_freezing's protection list.
+    if not all_targets:
+        print("No LoRA target modules specified, skipping PEFT wrapping.")
+        return model
 
     peft_config = LoraConfig(
         r=lora_config.r,
