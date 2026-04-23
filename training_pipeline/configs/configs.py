@@ -100,6 +100,9 @@ class TrainingConfig:
     torch_empty_cache_steps: int = None  # Clear CUDA cache every N steps (None = disabled)
     optim: str = "adamw_bnb_8bit"  # Optimizer type: adamw_torch, adamw_bnb_8bit,
     resume_from_checkpoint: Optional[str] = None
+    torch_compile: bool = False  # Enable torch.compile for the model
+    torch_compile_backend: Optional[str] = None  # Compiler backend (e.g. "inductor")
+    torch_compile_mode: Optional[str] = None  # Compilation mode (e.g. "reduce-overhead", "max-autotune")
     
 @dataclass
 class VLMTrainingConfig:

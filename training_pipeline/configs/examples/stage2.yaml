@@ -1,5 +1,5 @@
 model:
-  model_path: "/media/vishal/workspace/projects/VLA/checkpoints/stage2_1_merged/"
+  model_path: "/media/vishal/workspace/projects/VLA/checkpoints/new_base_for_re_stage1/"
   type: "dfq_vla"
   freeze_vision_tower: true
   freeze_llm: false
@@ -9,10 +9,10 @@ model:
   include_vqvae: true
   loss_weights:
     text: 1.0
-    xyz: 1.0
-    rot: 1.0
+    xyz: 0.001
+    rot: 0.001
   scheduled_sampling_prob: 0.0  # Prob of using LLM predictions for base_traj (reduces exposure bias)
-  action_head_grad_scale: 0.1  # Fraction of traj gradients flowing back to LLM (0=detach, 1=full)
+  action_head_grad_scale: 0.0  # Fraction of traj gradients flowing back to LLM (0=detach, 1=full)
 
 data:
   dataset_path: "/media/vishal/datasets/ar1_coc_dataset/extracted/ar1_hf_dataset_new/"
@@ -30,7 +30,7 @@ data:
   num_frames: 4
 
 training:
-  output_dir: "/media/vishal/workspace/projects/VLA/checkpoints/stage2_2_test"
+  output_dir: "/media/vishal/workspace/projects/VLA/checkpoints/repair_stage_1_2"
   num_train_epochs: 1
   learning_rate: 1.0e-4  # Default: Action Head, Flex, Projector, Traj MLP
   llm_learning_rate: 2.0e-5  # LLM LoRA adapters
@@ -42,10 +42,13 @@ training:
   logging_steps: 10
   gradient_checkpointing: true
   bf16: false
+  torch_compile: true
+  torch_compile_backend: "inductor"
+  torch_compile_mode: "default"
   optim: "adamw_bnb_8bit"
-  use_liger_kernel: true
+  use_liger_kernel: false
   torch_empty_cache_steps: 16
-  resume_from_checkpoint: "/media/vishal/workspace/projects/VLA/checkpoints/stage2_2/checkpoint-1267"
+  resume_from_checkpoint: "/media/vishal/workspace/projects/VLA/checkpoints/repair_stage_1_2/checkpoint-400/"
 
 qlora:
   enabled: false

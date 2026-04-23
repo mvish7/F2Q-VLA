@@ -46,4 +46,7 @@ def get_training_args(config: VLMTrainingConfig, data_collator: Any) -> SFTConfi
         use_liger_kernel=config.training.use_liger_kernel,  # Liger Kernel optimization
         torch_empty_cache_steps=config.training.torch_empty_cache_steps,  # Clear CUDA cache every N steps
         optim=config.training.optim,  # Optimizer type,
+        torch_compile=config.training.torch_compile,
+        torch_compile_backend=config.training.torch_compile_backend,
+        torch_compile_mode=config.training.torch_compile_mode,
     )
