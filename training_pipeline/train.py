@@ -27,7 +27,7 @@ def main():
     model = apply_freezing(model, config)
     
     # Setup LoRA / resume checkpoint
-    resume_path = config.training.resume_from_checkpoint
+    resume_path = config.training.resume_from_checkpoint or None
     is_lora_checkpoint = resume_path and (Path(resume_path) / "adapter_config.json").exists()
 
     if is_lora_checkpoint:
