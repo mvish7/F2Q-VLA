@@ -68,7 +68,7 @@ def main():
     # Train
     # Resume from full checkpoint (not LoRA — that was handled above)
     print("Starting training...")
-    full_ckpt = config.training.resume_from_checkpoint if not is_lora_checkpoint else None
+    full_ckpt = resume_path if not is_lora_checkpoint else None
     if full_ckpt:
         print(f"Resuming from full checkpoint: {full_ckpt}")
     trainer.train(resume_from_checkpoint=full_ckpt)

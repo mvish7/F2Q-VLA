@@ -1,5 +1,5 @@
 model:
-  model_path: "/media/vishal/workspace/projects/VLA/dfq_vla_artifacts"
+  model_path: "/media/vishal/workspace/projects/VLA/checkpoints/dfq_stage1/checkpoint-1500"
   type: "dfq_vla"
   freeze_vision_tower: true
   freeze_llm: false
@@ -48,7 +48,7 @@ training:
   torch_compile: true
   torch_compile_backend: "inductor"
   torch_compile_mode: "default"
-  "resume_from_checkpoint": "/media/vishal/workspace/projects/VLA/checkpoints/dfq_stage1/checkpoint-1500/"
+  resume_from_checkpoint: ""
 
 qlora:
   enabled: false
