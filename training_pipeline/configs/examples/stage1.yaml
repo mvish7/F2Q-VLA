@@ -2,7 +2,7 @@ model:
   model_path: "/media/vishal/workspace/projects/VLA/dfq_vla_artifacts"
   type: "dfq_vla"
   freeze_vision_tower: true
-  freeze_llm: true
+  freeze_llm: false
   freeze_projector: false
   freeze_action_head: false
   include_action_head: false
@@ -30,7 +30,7 @@ data:
   num_frames: 4
 
 training:
-  output_dir: "/media/vishal/workspace/projects/VLA/checkpoints/dfq_stage1"
+  output_dir: "/media/vishal/workspace/projects/VLA/checkpoints/dfq_stage1_1"
   num_train_epochs: 1
   learning_rate: 1.0e-3
   weight_decay: 0.01
@@ -47,6 +47,7 @@ training:
   torch_compile: true
   torch_compile_backend: "inductor"
   torch_compile_mode: "default"
+  "resume_from_checkpoint": "/media/vishal/workspace/projects/VLA/checkpoints/dfq_stage1/checkpoint-1500/"
 
 qlora:
   enabled: false
@@ -59,8 +60,8 @@ lora:
   enabled: true
   r: 64
   lora_alpha: 128
-  expand_target_modules: false
-  target_modules: []
+  expand_target_modules: true
+  llm_target_modules: ["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"]
   modules_to_save:
     - "flex_scene_encoder"
     - "projector"
