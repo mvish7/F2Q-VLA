@@ -50,6 +50,7 @@ class DataConfig:
     num_future_steps: int = 64
     time_step: float = 0.1
     num_frames: int = 4
+    traj_history_dropout_prob: float = 0.0  # Prob of zeroing out traj history per sample (regularization)
 
 @dataclass
 class LoRAConfig:

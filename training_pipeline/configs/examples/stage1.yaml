@@ -1,10 +1,11 @@
 model:
-  model_path: "/media/vishal/workspace/projects/VLA/checkpoints/dfq_stage1/checkpoint-1500"
+  model_path: "/media/vishal/workspace/projects/VLA/checkpoints/base_model/checkpoint-1500"
   type: "dfq_vla"
   freeze_vision_tower: true
-  freeze_llm: false
+  freeze_llm: true
   freeze_projector: false
   freeze_action_head: false
+  freeze_traj_projector: true
   include_action_head: false
   include_vqvae: false
   loss_weights:
@@ -28,6 +29,7 @@ data:
   num_future_steps: 64
   time_step: 0.1
   num_frames: 4
+  traj_history_dropout_prob: 0.8  # Prob of zeroing out traj history per sample
 
 training:
   output_dir: "/media/vishal/workspace/projects/VLA/checkpoints/dfq_stage1_1"
@@ -62,10 +64,12 @@ lora:
   r: 64
   lora_alpha: 128
   expand_target_modules: true
-  llm_target_modules: ["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"]
+  llm_target_modules: []
   modules_to_save:
     - "flex_scene_encoder"
     - "projector"
-    - "traj_projector"
     - "lm_head"
     - "embed_tokens"
+
+  # ["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"]
+  #     - "traj_projector"

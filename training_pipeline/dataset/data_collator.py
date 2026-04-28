@@ -149,6 +149,14 @@ class DataCollator:
         batch["ego_history_rot"] = torch.stack(ego_history_rot_list)
         batch["ego_future_xyz"] = torch.stack(ego_future_xyz_list)
         batch["ego_future_rot"] = torch.stack(ego_future_rot_list)
+
+        # Randomly zero out trajectory history for regularization
+        dropout_prob = getattr(self.config, "traj_history_dropout_prob", 0.0)
+        if dropout_prob > 0.0:
+            mask = torch.rand(len(examples)) < dropout_prob
+            if mask.any():
+                batch["ego_history_xyz"][mask] = 0.0
+                batch["ego_history_rot"][mask] = 0.0
         
         
         # 6. Generate camera_ids and timestamp_ids for Flex Scene Encoder
