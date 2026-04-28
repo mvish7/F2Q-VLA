@@ -1,5 +1,6 @@
 import argparse
 import os
+import random
 from huggingface_hub import HfApi, hf_hub_download
 from collections import defaultdict
 import fnmatch
@@ -21,6 +22,9 @@ def get_parser():
     parser = argparse.ArgumentParser(description="Download subset of NVIDIA PhysicalAI dataset")
     parser.add_argument("--start_chunk_id", type=int, default=60, help="Start chunk ID (inclusive)")
     parser.add_argument("--end_chunk_id", type=int, default=120, help="End chunk ID (inclusive)")
+    parser.add_argument("--num_random_chunks", "-n", type=int, default=None,
+                        help="Randomly sample N chunks from [start, end] range instead of downloading all")
+    parser.add_argument("--seed", type=int, default=42, help="Random seed for chunk sampling reproducibility")
     parser.add_argument("--output_dir", "-o", type=str, default="data/nvidia_physical_av", help="Local directory to download to")
     parser.add_argument("--dry_run", action="store_true", help="Print what would be downloaded without downloading")
     parser.add_argument("--token", type=str, default=None, help="Hugging Face token (optional, picks up from env or login)")
@@ -31,7 +35,19 @@ def main():
     args = parser.parse_args()
 
     api = HfApi(token=args.token)
-    
+
+    # Build the set of target chunk IDs
+    all_chunk_ids = list(range(args.start_chunk_id, args.end_chunk_id + 1))
+    if args.num_random_chunks is not None:
+        if args.num_random_chunks > len(all_chunk_ids):
+            print(f"Warning: requested {args.num_random_chunks} chunks but only "
+                  f"{len(all_chunk_ids)} available in range. Downloading all.")
+        else:
+            random.seed(args.seed)
+            all_chunk_ids = sorted(random.sample(all_chunk_ids, args.num_random_chunks))
+        print(f"Randomly selected {len(all_chunk_ids)} chunks (seed={args.seed}): {all_chunk_ids}")
+    target_chunk_ids = set(all_chunk_ids)
+
     print(f"Listing files in {REPO_ID}...")
     # List all files in the repo (this might take a moment if the repo is huge, but it's the reliable way to filter)
     all_files = api.list_repo_files(repo_id=REPO_ID, repo_type="dataset")
@@ -52,7 +68,7 @@ def main():
             for part in parts:
                 if part.startswith("chunk_") and part[6:].isdigit():
                     cid = int(part[6:])
-                    if args.start_chunk_id <= cid <= args.end_chunk_id:
+                    if cid in target_chunk_ids:
                         selected_files.append(f)
                         selected_chunk_ids.add(part)
                     break
