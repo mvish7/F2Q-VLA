@@ -1,0 +1,54 @@
+# Evaluation configuration for DFQ VLA
+# Usage: python -m eval_pipeline.evaluate --config eval_pipeline/configs/examples/eval.yaml
+
+model:
+  model_path: "/media/vishal/workspace/projects/VLA/checkpoints/base_model/checkpoint-1500"
+  type: "dfq_vla"
+  freeze_vision_tower: true
+  freeze_llm: true
+  freeze_projector: true
+  freeze_action_head: false
+  freeze_flex_encoder: true
+  freeze_traj_projector: true
+  include_action_head: false
+  include_vqvae: true
+
+data:
+  dataset_path: "/media/vishal/extended_workspace/ar1_coc_dataset/extracted/ar1_hf_dataset_new/"
+  data_base_path: "/media/vishal/extended_workspace/ar1_coc_dataset/"
+  test_split_ratio: 0.01
+  image_size_height: 320
+  image_size_width: 512
+  dataloader_num_workers: 0
+  dataloader_pin_memory: false
+  max_len: 1024
+  num_history_steps: 16
+  num_future_steps: 64
+  time_step: 0.1
+  num_frames: 4
+
+eval:
+  num_samples: 6          # K for minADE-K (generates 6 samples, reports minADE3 and minADE6)
+  temperature: 0.7        # Sampling temperature for diverse predictions
+  top_p: 0.1              # Nucleus sampling threshold
+  max_new_tokens: 12      # 8 VQ indices + delimiters + margin
+  batch_size: 1           # Eval batch size (keep small for memory)
+  output_file: "eval_results.json"
+
+# LoRA adapter checkpoint (if applicable)
+checkpoint_path: "/media/vishal/workspace/projects/VLA/checkpoints/stage1_3_lora_adapter/"
+
+lora:
+  enabled: true
+  r: 64
+  lora_alpha: 128
+  expand_target_modules: true
+  llm_target_modules: ["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"]
+  vision_enc_target_modules: []
+  modules_to_save:
+    - "flex_scene_encoder"
+    - "action_head"
+    - "projector"
+    - "traj_projector"
+    - "lm_head"
+    - "embed_tokens"
