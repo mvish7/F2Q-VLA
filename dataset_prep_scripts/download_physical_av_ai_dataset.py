@@ -24,6 +24,8 @@ def get_parser():
     parser.add_argument("--end_chunk_id", type=int, default=120, help="End chunk ID (inclusive)")
     parser.add_argument("--num_random_chunks", "-n", type=int, default=None,
                         help="Randomly sample N chunks from [start, end] range instead of downloading all")
+    parser.add_argument("--multiple_of_X", "-x", type=int, default=None,
+                        help="Download chunks whose ID is a multiple of X (e.g. 2, 3, 4)")
     parser.add_argument("--seed", type=int, default=42, help="Random seed for chunk sampling reproducibility")
     parser.add_argument("--output_dir", "-o", type=str, default="data/nvidia_physical_av", help="Local directory to download to")
     parser.add_argument("--dry_run", action="store_true", help="Print what would be downloaded without downloading")
@@ -36,9 +38,16 @@ def main():
 
     api = HfApi(token=args.token)
 
+    if args.num_random_chunks is not None and args.multiple_of_X is not None:
+        parser.error("Cannot specify both --num_random_chunks and --multiple_of_X")
+
     # Build the set of target chunk IDs
     all_chunk_ids = list(range(args.start_chunk_id, args.end_chunk_id + 1))
-    if args.num_random_chunks is not None:
+    
+    if args.multiple_of_X is not None:
+        all_chunk_ids = [cid for cid in all_chunk_ids if cid % args.multiple_of_X == 0]
+        print(f"Selected {len(all_chunk_ids)} chunks that are multiples of {args.multiple_of_X}: {all_chunk_ids}")
+    elif args.num_random_chunks is not None:
         if args.num_random_chunks > len(all_chunk_ids):
             print(f"Warning: requested {args.num_random_chunks} chunks but only "
                   f"{len(all_chunk_ids)} available in range. Downloading all.")
@@ -46,6 +55,7 @@ def main():
             random.seed(args.seed)
             all_chunk_ids = sorted(random.sample(all_chunk_ids, args.num_random_chunks))
         print(f"Randomly selected {len(all_chunk_ids)} chunks (seed={args.seed}): {all_chunk_ids}")
+        
     target_chunk_ids = set(all_chunk_ids)
 
     print(f"Listing files in {REPO_ID}...")
