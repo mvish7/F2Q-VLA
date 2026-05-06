@@ -29,6 +29,8 @@ def get_training_args(config: VLMTrainingConfig, data_collator: Any) -> SFTConfi
         report_to=config.training.report_to,
         bf16=config.training.bf16,
         max_grad_norm=config.training.max_grad_norm,
+        lr_scheduler_type=config.training.lr_scheduler_type,
+        lr_scheduler_kwargs=config.training.lr_scheduler_kwargs,
         warmup_ratio=config.training.warmup_ratio,
         gradient_checkpointing=config.training.gradient_checkpointing,
         # use_reentrant=False is required when gradient checkpointing with frozen modules.

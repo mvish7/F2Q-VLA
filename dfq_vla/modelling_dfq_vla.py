@@ -111,8 +111,11 @@ class DFQVLAForConditionalGeneration(DFQVLAPretrainedModel, GenerationMixin, Tra
         # LM head
         self.lm_head = nn.Linear(config.text_config.hidden_size, config.text_config.vocab_size, bias=False)
         
-        # 4. Initialize trajectory history projector
-        self._initialize_traj_projector(config)
+        # 4. Initialize trajectory history projector (optional)
+        if getattr(config, 'include_traj_projector', True):
+            self._initialize_traj_projector(config)
+        else:
+            self.traj_projector = None
         
         # 5. Initialize action head for future trajectory prediction
         if getattr(config, 'include_action_head', True):
@@ -279,16 +282,17 @@ class DFQVLAForConditionalGeneration(DFQVLAPretrainedModel, GenerationMixin, Tra
         else:
             image_embeds = None
 
-        # 2b. Fuse Trajectory History Embeddings
-        ego_history_xyz = kwargs.get("ego_history_xyz")
-        ego_history_rot = kwargs.get("ego_history_rot")
-        if ego_history_xyz is not None and ego_history_rot is not None:
-            inputs_embeds = self.fuse_traj_embeddings(
-                input_ids=input_ids,
-                inputs_embeds=inputs_embeds,
-                ego_history_xyz=ego_history_xyz,
-                ego_history_rot=ego_history_rot,
-            )
+        # 2b. Fuse Trajectory History Embeddings (only when traj_projector is present)
+        if self.traj_projector is not None:
+            ego_history_xyz = kwargs.get("ego_history_xyz")
+            ego_history_rot = kwargs.get("ego_history_rot")
+            if ego_history_xyz is not None and ego_history_rot is not None:
+                inputs_embeds = self.fuse_traj_embeddings(
+                    input_ids=input_ids,
+                    inputs_embeds=inputs_embeds,
+                    ego_history_xyz=ego_history_xyz,
+                    ego_history_rot=ego_history_rot,
+                )
 
         # 3. Pass to LLM with output_hidden_states and output_attentions
         outputs = self.language_model(

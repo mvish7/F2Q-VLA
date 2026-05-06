@@ -107,8 +107,14 @@ class DatasetLoader:
                 embedding_dim=getattr(self.model_config, "vqvae_embedding_dim", 256),
             )
 
+        # Resolve include_traj_projector: None → follows include_action_head
+        include_traj = getattr(self.model_config, "include_traj_projector", None) if self.model_config else None
+        if include_traj is None:
+            include_traj = getattr(self.model_config, "include_action_head", True) if self.model_config else True
+
         return DataCollator(
             self.processor, image_token_id, self.config,
             use_flex=use_flex, vqvae_tokenizer=vqvae_tokenizer,
             camera_features=self.camera_features,
+            include_traj_projector=include_traj,
         )

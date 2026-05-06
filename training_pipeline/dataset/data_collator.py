@@ -10,11 +10,12 @@ from .data_extractor import get_images_from_sample
 class DataCollator:
     """Collator that encodes text and image pairs for VLM training."""
     
-    def __init__(self, processor: Any, image_token_id: int, config: DataConfig, use_flex: bool = False, vqvae_tokenizer=None, camera_features=None):
+    def __init__(self, processor: Any, image_token_id: int, config: DataConfig, use_flex: bool = False, vqvae_tokenizer=None, camera_features=None, include_traj_projector: bool = True):
         self.processor = processor
         self.image_token_id = image_token_id
         self.config = config
         self.use_flex = use_flex
+        self.include_traj_projector = include_traj_projector
         self.vqvae_tokenizer = vqvae_tokenizer
         self.local_avdi = physical_ai_av.PhysicalAIAVDatasetInterface(cache_dir=config.data_base_path)
         self.camera_features = camera_features or []
@@ -99,11 +100,16 @@ class DataCollator:
             # Encode future trajectory → 8 VQ-VAE codebook indices
             vqvae_indices = self.vqvae_tokenizer.encode(curr_fut_xyz, curr_fut_rot)
             
-            formatted_sample = format_vla_data(sample, vqvae_indices, use_flex=self.use_flex, sample_image=all_images[0][0][0])
+            formatted_sample = format_vla_data(
+                sample, vqvae_indices, use_flex=self.use_flex,
+                sample_image=all_images[0][0][0],
+                include_traj_history=self.include_traj_projector,
+            )
             formatted_examples.append(formatted_sample)
 
-            ego_history_xyz_list.append(curr_hist_xyz)
-            ego_history_rot_list.append(curr_hist_rot)
+            if self.include_traj_projector:
+                ego_history_xyz_list.append(curr_hist_xyz)
+                ego_history_rot_list.append(curr_hist_rot)
             ego_future_xyz_list.append(curr_fut_xyz)
             ego_future_rot_list.append(curr_fut_rot)
         
@@ -117,11 +123,13 @@ class DataCollator:
 
         # 3. Tokenize Text & Process Images
         # Processor expects a flat list of images corresponding to <|image_pad|> tokens in sequence
+        padding_free = getattr(self.config, "padding_free", True)
         batch = self.processor(
             text=texts, 
             images=all_images, 
             return_tensors="pt", 
-            padding=True,
+            padding=not padding_free,
+            # padding_free=padding_free,
             size={"height": self.config.image_size_height, "width": self.config.image_size_width}
         )
         # Free large CPU intermediates now that the processor has consumed them
@@ -145,18 +153,20 @@ class DataCollator:
         batch["labels"] = labels
 
         # Stack traj data
-        batch["ego_history_xyz"] = torch.stack(ego_history_xyz_list)
-        batch["ego_history_rot"] = torch.stack(ego_history_rot_list)
+        if self.include_traj_projector:
+            batch["ego_history_xyz"] = torch.stack(ego_history_xyz_list)
+            batch["ego_history_rot"] = torch.stack(ego_history_rot_list)
         batch["ego_future_xyz"] = torch.stack(ego_future_xyz_list)
         batch["ego_future_rot"] = torch.stack(ego_future_rot_list)
 
         # Randomly zero out trajectory history for regularization
-        dropout_prob = getattr(self.config, "traj_history_dropout_prob", 0.0)
-        if dropout_prob > 0.0:
-            mask = torch.rand(len(examples)) < dropout_prob
-            if mask.any():
-                batch["ego_history_xyz"][mask] = 0.0
-                batch["ego_history_rot"][mask] = 0.0
+        if self.include_traj_projector:
+            dropout_prob = getattr(self.config, "traj_history_dropout_prob", 0.0)
+            if dropout_prob > 0.0:
+                mask = torch.rand(len(examples)) < dropout_prob
+                if mask.any():
+                    batch["ego_history_xyz"][mask] = 0.0
+                    batch["ego_history_rot"][mask] = 0.0
         
         
         # 6. Generate camera_ids and timestamp_ids for Flex Scene Encoder

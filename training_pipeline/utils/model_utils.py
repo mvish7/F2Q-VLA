@@ -67,6 +67,11 @@ def load_model_and_processor(config) -> Tuple[Any, Any]:
     
     # Inject component inclusion flags
     hf_config.include_action_head = getattr(config.model, "include_action_head", True)
+    # Resolve include_traj_projector: None → follows include_action_head
+    include_traj = getattr(config.model, "include_traj_projector", None)
+    if include_traj is None:
+        include_traj = hf_config.include_action_head
+    hf_config.include_traj_projector = include_traj
     hf_config.include_vqvae = getattr(config.model, "include_vqvae", True)
     hf_config.scheduled_sampling_prob = getattr(config.model, "scheduled_sampling_prob", 0.0)
     hf_config.action_head_grad_scale = getattr(config.model, "action_head_grad_scale", 0.1)
@@ -82,7 +87,7 @@ def load_model_and_processor(config) -> Tuple[Any, Any]:
     
     # Ensure custom modules are natively cast to model's torch_dtype
     # This prevents Float vs BFloat16 crashes when running purely in BFloat16 without autocast
-    for module_name in ["flex_scene_encoder", "projector", "action_head", "loss_calculator"]:
+    for module_name in ["flex_scene_encoder", "projector", "action_head", "traj_projector", "loss_calculator"]:
         if hasattr(model, module_name) and getattr(model, module_name) is not None:
             getattr(model, module_name).to(torch_dtype)
     
@@ -172,12 +177,12 @@ def apply_freezing(model, config):
     # 6. Trajectory Projector
     freeze_traj_projector = getattr(config.model, "freeze_traj_projector", False)
     if freeze_traj_projector:
-        print("Freezing trajectory projector...")
         if hasattr(model, "traj_projector") and model.traj_projector is not None:
+            print("Freezing trajectory projector...")
             for param in model.traj_projector.parameters():
                 param.requires_grad = False
         else:
-            print("Warning: requested to freeze traj_projector, but model does not have it.")
+            print("Note: traj_projector excluded or missing, freeze_traj_projector has no effect.")
 
     # Debug print to verify
     trainable_params = []

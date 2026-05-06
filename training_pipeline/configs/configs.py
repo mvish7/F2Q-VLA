@@ -19,6 +19,7 @@ class ModelConfig:
     
     # Component inclusion (set False to exclude from model entirely)
     include_action_head: bool = True
+    include_traj_projector: Optional[bool] = None  # Defaults to include_action_head value
     include_vqvae: bool = True
     scheduled_sampling_prob: float = 0.0  # Prob of using LLM predictions for VQ-VAE decoding (0=teacher forcing)
     action_head_grad_scale: float = 0.1  # Scale factor for gradients from action_head → LLM (0=detach, 1=full)
@@ -51,6 +52,7 @@ class DataConfig:
     time_step: float = 0.1
     num_frames: int = 4
     traj_history_dropout_prob: float = 0.0  # Prob of zeroing out traj history per sample (regularization)
+    padding_free: bool = True  # Enable padding-free packing
 
 @dataclass
 class LoRAConfig:
@@ -93,6 +95,8 @@ class TrainingConfig:
     eval_strategy: str = "steps"
     eval_steps: int = 500
     logging_steps: int = 100
+    lr_scheduler_type: str = "cosine"  # LR scheduler: linear, cosine, cosine_with_restarts, etc.
+    lr_scheduler_kwargs: dict = field(default_factory=dict)  # Extra kwargs for scheduler (e.g. num_cycles for cosine_with_restarts)
     warmup_ratio: float = 0.03
     bf16: bool = True
     max_grad_norm: float = 1.0

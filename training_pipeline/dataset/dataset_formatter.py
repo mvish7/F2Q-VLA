@@ -24,13 +24,15 @@ TRAJ_TOKEN = {
 }
 
 def format_vla_data(sample: Dict[str, Any], vqvae_indices: list[int], use_flex: bool = False,
-                    sample_image:torch.Tensor = None) -> list[Dict[str, Any]]:
+                    sample_image:torch.Tensor = None, include_traj_history: bool = True) -> list[Dict[str, Any]]:
     """Format a VLA sample into a conversation list for DFQ VLA.
     
     Args:
         sample: Raw dataset sample.
         use_flex: If True, use single image placeholder for Flex Scene Encoder.
                   If False, use per-image placeholders (16 total).
+        include_traj_history: If True, include trajectory history placeholder tokens.
+                              Set to False when traj_projector is excluded.
     
     Returns:
         Conversation list for chat template.
@@ -73,21 +75,21 @@ def format_vla_data(sample: Dict[str, Any], vqvae_indices: list[int], use_flex: 
         "image": sample_image,  # Placeholder - collator loads all images
     })
     
-    # b. Trajectory History Placeholder
-    # Default 16 tokens (1 embedding per waypoint)
-    num_traj_tokens = 16
-    hist_traj_placeholder = (
-        f"{TRAJ_TOKEN['history_start']}"
-        f"{TRAJ_TOKEN['history'] * num_traj_tokens}"
-        f"{TRAJ_TOKEN['history_end']}"
-    )
-    
-    # c. Text Prompt
+    # b. Trajectory History Placeholder (only when traj_projector is included)
     user_text = "By analyzing the given images and the past trajectory, predict 8 discrete ids corresponding to the future trajectory."
+    
+    if include_traj_history:
+        num_traj_tokens = 16
+        hist_traj_placeholder = (
+            f"{TRAJ_TOKEN['history_start']}"
+            f"{TRAJ_TOKEN['history'] * num_traj_tokens}"
+            f"{TRAJ_TOKEN['history_end']}"
+        )
+        user_text = f"{hist_traj_placeholder}{user_text}"
     
     user_content.append({
         "type": "text",
-        "text": f"{hist_traj_placeholder}{user_text}"
+        "text": user_text
     })
 
     # 3. Assistant Target — VQ-VAE trajectory indices

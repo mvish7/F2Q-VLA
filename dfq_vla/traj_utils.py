@@ -107,8 +107,8 @@ class TrajectoryFusionMixin:
         Returns:
             inputs_embeds: Modified embeddings with trajectory embeddings fused in.
         """
-        if not hasattr(self, "traj_projector"):
-            raise AttributeError("TrajectoryFusionMixin requires 'traj_projector' attribute")
+        if not hasattr(self, "traj_projector") or self.traj_projector is None:
+            return inputs_embeds  # No-op: trajectory projector excluded
         if not hasattr(self.config, "traj_token_ids"):
             raise AttributeError("Config requires 'traj_token_ids' attribute")
 
