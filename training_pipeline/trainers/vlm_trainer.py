@@ -42,13 +42,24 @@ class VLMTrainer(SFTTrainer):
         
         Uses build_param_groups to classify trainable params into
         default / LLM LoRA / Vision LoRA groups with distinct LRs.
+        
+        When optim="muon_plus_adamw", routes 2D weight matrices to Muon
+        and everything else to AdamW (per LR-group).
         """
         if self.optimizer is not None:
             return self.optimizer
         
         param_groups = build_param_groups(self.model, self.vlm_config)
         
-        # Resolve optimizer class from args.optim string
+        if self.vlm_config.training.optim == "muon_plus_adamw":
+            from ..optimizers import MuonPlusAdamW
+            self.optimizer = MuonPlusAdamW(
+                param_groups,
+                weight_decay=self.args.weight_decay,
+            )
+            return self.optimizer
+        
+        # Standard HF optimizer path
         optimizer_cls, optimizer_kwargs = SFTTrainer.get_optimizer_cls_and_kwargs(self.args, self.model)
         
         # Remove 'lr' from kwargs since each group has its own

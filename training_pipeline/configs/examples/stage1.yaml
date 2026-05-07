@@ -45,7 +45,7 @@ training:
   logging_steps: 10
   use_liger_kernel: true
   torch_empty_cache_steps: 1
-  optim: "adamw_bnb_8bit"
+  optim: "adamw_bnb_8bit"  # Options: adamw_bnb_8bit, adamw_torch, muon_plus_adamw
   gradient_checkpointing: true
   bf16: false
   torch_compile: true
