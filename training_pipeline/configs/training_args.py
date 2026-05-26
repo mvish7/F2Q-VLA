@@ -29,8 +29,8 @@ def get_training_args(config: VLMTrainingConfig, data_collator: Any) -> SFTConfi
         report_to=config.training.report_to,
         bf16=config.training.bf16,
         max_grad_norm=config.training.max_grad_norm,
-        lr_scheduler_type=config.training.lr_scheduler_type,
-        lr_scheduler_kwargs=config.training.lr_scheduler_kwargs,
+        # lr_scheduler_type=config.training.lr_scheduler_type,
+        # lr_scheduler_kwargs=config.training.lr_scheduler_kwargs,
         warmup_ratio=config.training.warmup_ratio,
         gradient_checkpointing=config.training.gradient_checkpointing,
         # use_reentrant=False is required when gradient checkpointing with frozen modules.
@@ -47,7 +47,7 @@ def get_training_args(config: VLMTrainingConfig, data_collator: Any) -> SFTConfi
         remove_unused_columns=False, # Essential for custom VLM collators often
         use_liger_kernel=config.training.use_liger_kernel,  # Liger Kernel optimization
         torch_empty_cache_steps=config.training.torch_empty_cache_steps,  # Clear CUDA cache every N steps
-        optim=config.training.optim,  # Optimizer type,
+        # optim=config.training.optim,  # Optimizer type,
         torch_compile=config.training.torch_compile,
         torch_compile_backend=config.training.torch_compile_backend,
         torch_compile_mode=config.training.torch_compile_mode,

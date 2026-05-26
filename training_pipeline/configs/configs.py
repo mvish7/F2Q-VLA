@@ -95,8 +95,8 @@ class TrainingConfig:
     eval_strategy: str = "steps"
     eval_steps: int = 500
     logging_steps: int = 100
-    lr_scheduler_type: str = "cosine"  # LR scheduler: linear, cosine, cosine_with_restarts, etc.
-    lr_scheduler_kwargs: dict = field(default_factory=dict)  # Extra kwargs for scheduler (e.g. num_cycles for cosine_with_restarts)
+    # lr_scheduler_type: str = "cosine"  # LR scheduler: linear, cosine, cosine_with_restarts, etc.
+    # lr_scheduler_kwargs: dict = field(default_factory=dict)  # Extra kwargs for scheduler (e.g. num_cycles for cosine_with_restarts)
     warmup_ratio: float = 0.03
     bf16: bool = True
     max_grad_norm: float = 1.0
