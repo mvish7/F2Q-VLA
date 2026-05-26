@@ -40,7 +40,7 @@ class DFQVLAConfig(PretrainedConfig):
             use_flex_scene_encoder: bool = True,  # Enable Flex encoder
             num_cameras: int = 4,  # Number of camera views
             num_timestamps: int = 4,  # Number of timestamps
-            num_scene_tokens: int = 800,  # K = 50 per image × 16 images
+            num_scene_tokens: int = 512,  # K scene tokens output by Flex encoder
             flex_encoder_layers: int = 4,  # Transformer layers (balanced for ~1B model)
             flex_encoder_heads: int = 12,  # Attention heads (matches TIPSv2 12 heads)
             flex_encoder_dim_feedforward: int = 3072,  # FFN dimension

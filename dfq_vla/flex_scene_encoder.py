@@ -28,7 +28,7 @@ class FlexSceneEncoder(nn.Module):
     def __init__(
         self,
         vision_hidden_size: int,
-        num_scene_tokens: int = 900,
+        num_scene_tokens: int = 512,
         num_cameras: int = 4,
         num_timestamps: int = 4,
         num_layers: int = 6,
@@ -207,7 +207,7 @@ def create_flex_scene_encoder(config) -> FlexSceneEncoder:
     """
     return FlexSceneEncoder(
         vision_hidden_size=getattr(config, "vision_hidden_size", 3072),
-        num_scene_tokens=getattr(config, "num_scene_tokens", 800),
+        num_scene_tokens=getattr(config, "num_scene_tokens", 512),
         num_cameras=getattr(config, "num_cameras", 4),
         num_timestamps=getattr(config, "num_timestamps", 4),
         num_layers=getattr(config, "flex_encoder_layers", 6),

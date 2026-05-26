@@ -98,7 +98,7 @@ def load_model_and_processor(config) -> Tuple[Any, Any]:
     # This ensures the processor inserts the correct number of image tokens
     if hasattr(model.config, 'use_flex_scene_encoder'):
         processor.use_flex_scene_encoder = model.config.use_flex_scene_encoder
-        processor.num_scene_tokens = getattr(model.config, 'num_scene_tokens', 800)
+        processor.num_scene_tokens = getattr(model.config, 'num_scene_tokens', 512)
         print(f"Synced processor flex encoder settings: use_flex_scene_encoder={processor.use_flex_scene_encoder}, num_scene_tokens={processor.num_scene_tokens}")
 
     # Resize token embeddings to match tokenizer

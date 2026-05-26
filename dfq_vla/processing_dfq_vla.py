@@ -36,7 +36,7 @@ class DFQVLAProcessor(ProcessorMixin):
     }
 
     def __init__(self, image_processor, tokenizer, chat_template, vision_config=None, traj_vocab_size=768, 
-                 use_flex_scene_encoder=False, num_scene_tokens=800, **kwargs):
+                 use_flex_scene_encoder=False, num_scene_tokens=512, **kwargs):
         super().__init__(image_processor, tokenizer, chat_template=chat_template)
         self.vision_config = vision_config
         self.image_token = "<|image_pad|>" if not hasattr(tokenizer, "image_token") else tokenizer.image_token
@@ -66,7 +66,7 @@ class DFQVLAProcessor(ProcessorMixin):
         
         # Flex Scene Encoder config
         self.use_flex_scene_encoder = use_flex_scene_encoder
-        self.num_scene_tokens = num_scene_tokens  # K=800 by default
+        self.num_scene_tokens = num_scene_tokens
         
         # Add trajectory tokens to tokenizer
         self.traj_vocab_size = traj_vocab_size
@@ -145,7 +145,7 @@ class DFQVLAProcessor(ProcessorMixin):
             while self.image_token in text[i]:
                 if self.use_flex_scene_encoder:
                     # Flex mode: Single image placeholder expands to K scene tokens
-                    # The Flex encoder outputs num_scene_tokens (K=800) tokens
+                    # The Flex encoder outputs num_scene_tokens tokens
                     num_image_tokens = self.num_scene_tokens
                 else:
                     # Legacy mode: Calculate dynamic token count based on image dimensions
