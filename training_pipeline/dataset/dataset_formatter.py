@@ -24,7 +24,8 @@ TRAJ_TOKEN = {
 }
 
 def format_vla_data(sample: Dict[str, Any], vqvae_indices: list[int], use_flex: bool = False,
-                    sample_image:torch.Tensor = None, include_traj_history: bool = True) -> list[Dict[str, Any]]:
+                    sample_image:torch.Tensor = None, include_traj_history: bool = True,
+                    num_traj_tokens: int = 16) -> list[Dict[str, Any]]:
     """Format a VLA sample into a conversation list for DFQ VLA.
     
     Args:
@@ -79,7 +80,6 @@ def format_vla_data(sample: Dict[str, Any], vqvae_indices: list[int], use_flex: 
     user_text = "By analyzing the given images and the past trajectory, predict 8 discrete ids corresponding to the future trajectory."
     
     if include_traj_history:
-        num_traj_tokens = 16
         hist_traj_placeholder = (
             f"{TRAJ_TOKEN['history_start']}"
             f"{TRAJ_TOKEN['history'] * num_traj_tokens}"

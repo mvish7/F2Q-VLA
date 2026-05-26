@@ -44,6 +44,11 @@ class DataCollator:
         while h_xyz.ndim > 2: h_xyz = h_xyz.squeeze(0)
         while h_rot.ndim > 2: h_rot = h_rot.squeeze(0)
         
+        # Clamp to configured number of history steps (take most recent N steps)
+        n = self.config.num_history_steps
+        h_xyz = h_xyz[-n:]
+        h_rot = h_rot[-n:]
+        
         # Future (Labels)
         f_xyz = curr_sample["ego_future_xyz"]
         f_rot = curr_sample["ego_future_rot"]
@@ -104,6 +109,7 @@ class DataCollator:
                 sample, vqvae_indices, use_flex=self.use_flex,
                 sample_image=all_images[0][0][0],
                 include_traj_history=self.include_traj_projector,
+                num_traj_tokens=self.config.num_history_steps,
             )
             formatted_examples.append(formatted_sample)
 
