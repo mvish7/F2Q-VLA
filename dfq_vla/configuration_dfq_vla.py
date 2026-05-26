@@ -1,14 +1,14 @@
 from transformers import AutoConfig
 from transformers.configuration_utils import PretrainedConfig
-from transformers import DINOv3ViTConfig, Qwen3Config
+from transformers import Qwen3Config
 
 
-VISION_MODEL_ID = "facebook/dinov3-vitb16-pretrain-lvd1689m"
+VISION_MODEL_ID = "google/tipsv2-b14"
 
 
 class DFQVLAConfig(PretrainedConfig):
     model_type = "dfq_vla"
-    sub_configs = {"vision_config": DINOv3ViTConfig, "text_config": Qwen3Config}
+    sub_configs = {"text_config": Qwen3Config}
     
     def __init__(
             self,
@@ -42,7 +42,7 @@ class DFQVLAConfig(PretrainedConfig):
             num_timestamps: int = 4,  # Number of timestamps
             num_scene_tokens: int = 800,  # K = 50 per image × 16 images
             flex_encoder_layers: int = 4,  # Transformer layers (balanced for ~1B model)
-            flex_encoder_heads: int = 8,  # Attention heads
+            flex_encoder_heads: int = 12,  # Attention heads (matches TIPSv2 12 heads)
             flex_encoder_dim_feedforward: int = 3072,  # FFN dimension
             flex_encoder_dropout: float = 0.1,  # Dropout
             **kwargs
@@ -52,10 +52,20 @@ class DFQVLAConfig(PretrainedConfig):
 
         # Initialize sub-configs
         if vision_config is None:
-            # Defaults to DINOv3 ViT-B/16 config if not provided
-            self.vision_config = AutoConfig.from_pretrained(VISION_MODEL_ID)
+            # Defaults to TIPSv2-B/14 config if not provided
+            self.vision_config = AutoConfig.from_pretrained(VISION_MODEL_ID, trust_remote_code=True)
         elif isinstance(vision_config, dict):
-            self.vision_config = self.sub_configs["vision_config"](**vision_config)
+            # If loaded from dict, reconstruct the config object
+            if "auto_map" in vision_config and "_name_or_path" in vision_config:
+                # Custom/remote model (e.g. TIPSv2): load via from_pretrained to resolve auto_map
+                self.vision_config = AutoConfig.from_pretrained(
+                    vision_config["_name_or_path"], trust_remote_code=True
+                )
+            elif "model_type" in vision_config:
+                # Built-in model type
+                self.vision_config = AutoConfig.for_model(**vision_config)
+            else:
+                self.vision_config = vision_config
         else:
             self.vision_config = vision_config
 
@@ -67,7 +77,7 @@ class DFQVLAConfig(PretrainedConfig):
             self.text_config = text_config
 
         self.hidden_size = self.text_config.hidden_size
-        self.vision_hidden_size = self.vision_config.hidden_size  # e.g. 768 for DINOv3 ViT-B/16
+        self.vision_hidden_size = getattr(self.vision_config, "hidden_size", getattr(self.vision_config, "embed_dim", 768))
         self.projector_hidden_act = projector_hidden_act
         self.ignore_index = ignore_index
         self.vocab_size = self.text_config.vocab_size

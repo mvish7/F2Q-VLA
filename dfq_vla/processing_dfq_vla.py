@@ -23,7 +23,7 @@ class DFQVLAProcessorKwargs(ProcessingKwargs, total=False):
 
 class DFQVLAProcessor(ProcessorMixin):
     attributes = ["image_processor", "tokenizer"]
-    image_processor_class = "DINOv3ViTImageProcessorFast"
+    image_processor_class = "CLIPImageProcessor"
     tokenizer_class = ("Qwen2Tokenizer", "Qwen2TokenizerFast")
     
     # Trajectory token constants
@@ -103,13 +103,13 @@ class DFQVLAProcessor(ProcessorMixin):
     def _calculate_num_image_tokens(self, image_height, image_width):
         """Calculate number of tokens based on image dimensions.
         
-        DinoV3 formula: (H // patch_size) * (W // patch_size) + 1 (CLS token)
+        TIPSv2 formula: (H // patch_size) * (W // patch_size) + 1 (CLS token)
         Falls back to a default if vision_config is not available.
         """
         if self.vision_config is not None:
             patch_size = self.vision_config.patch_size
         else:
-            patch_size = 16  # DinoV3 default patch size
+            patch_size = 14  # TIPSv2 default patch size
         return (image_height // patch_size) * (image_width // patch_size) + 1
 
     def __call__(self, text=None, images=None, return_tensors=None, **kwargs: Unpack[DFQVLAProcessorKwargs]):

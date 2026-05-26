@@ -33,8 +33,8 @@ from dfq_vla.loss import DFQVLALoss
 class DFQVLAProjector(nn.Module):
     def __init__(self, config):
         super().__init__()
-        # DinoV3 hidden size -> Qwen hidden size
-        self.linear_1 = nn.Linear(config.vision_config.hidden_size, config.text_config.hidden_size, bias=False)
+        # Vision hidden size -> LLM hidden size
+        self.linear_1 = nn.Linear(config.vision_hidden_size, config.text_config.hidden_size, bias=False)
         self.act = nn.GELU()
         self.linear_2 = nn.Linear(config.text_config.hidden_size, config.text_config.hidden_size, bias=False)
 
@@ -88,7 +88,7 @@ class DFQVLAPretrainedModel(PreTrainedModel):
 
 class DFQVLAForConditionalGeneration(DFQVLAPretrainedModel, GenerationMixin, TrajectoryFusionMixin):
     _checkpoint_conversion_mapping = {}
-    _tied_weights_keys = ["lm_head.weight"]
+    _tied_weights_keys = {"lm_head.weight": "language_model.embed_tokens.weight"}
     _keys_to_ignore_on_load_missing = [r"^vqvae_tokenizer\..*"]
     config_class = DFQVLAConfig
     accepts_loss_kwargs = False
@@ -100,7 +100,7 @@ class DFQVLAForConditionalGeneration(DFQVLAPretrainedModel, GenerationMixin, Tra
 
         # 1. Load Vision Encoder (DINOv3)
         # We use from_config to initialize empty structure, weights loaded later
-        self.vision_tower = AutoModel.from_config(config.vision_config)
+        self.vision_tower = AutoModel.from_config(config.vision_config, trust_remote_code=True)
 
         # 2. Load LLM (Qwen3)
         self.language_model = AutoModel.from_config(config.text_config)
@@ -254,6 +254,12 @@ class DFQVLAForConditionalGeneration(DFQVLAPretrainedModel, GenerationMixin, Tra
             target_dtype = self.get_input_embeddings().weight.dtype
             vision_outputs = self.vision_tower(pixel_values.to(target_dtype), output_hidden_states=True)
             image_embeds = vision_outputs.last_hidden_state
+            
+            # Strip CLS + register tokens, keep only patch tokens
+            # DINOv3 output layout: [CLS, reg_0, ..., reg_N, patch_0, ..., patch_P]
+            num_register = getattr(self.config.vision_config, "num_register_tokens", 0)
+            num_prefix = 1 + num_register  # 1 for CLS
+            image_embeds = image_embeds[:, num_prefix:, :]
             
             # 2. Flex Scene Encoding (if enabled)
             if self.flex_scene_encoder is not None and camera_ids is not None:
