@@ -15,15 +15,14 @@ class DatasetLoader:
         self.model_config = model_config
         self.local_avdi = physical_ai_av.PhysicalAIAVDatasetInterface(cache_dir=config.data_base_path)
         self.camera_features = [
-            self.local_avdi.features.CAMERA.CAMERA_CROSS_LEFT_120FOV,
             self.local_avdi.features.CAMERA.CAMERA_FRONT_WIDE_120FOV,
-            self.local_avdi.features.CAMERA.CAMERA_CROSS_RIGHT_120FOV,
             self.local_avdi.features.CAMERA.CAMERA_FRONT_TELE_30FOV,
         ]
 
     def load_dataset(self) -> tuple[list[dict], list[dict]]:
         """Load and process the dataset."""
         dataset = load_from_disk(self.config.dataset_path)
+        dataset = dataset.select(range(100))
 
         # Expand into list of dicts (can't use Dataset.map because camera
         # objects are not Arrow-serializable)
@@ -78,10 +77,9 @@ class DatasetLoader:
         """Get the data collator initialized with processor and config."""
         # Detect image token ID
         # Common convention for some VLMs
-        if "<|image_pad|>" in self.processor.tokenizer.additional_special_tokens:
-            image_token_id = self.processor.tokenizer.additional_special_tokens_ids[
-                self.processor.tokenizer.additional_special_tokens.index("<|image_pad|>")
-            ]
+        vocab = self.processor.tokenizer.get_vocab()
+        if "<|image_pad|>" in vocab:
+            image_token_id = vocab["<|image_pad|>"]
         elif hasattr(self.processor.tokenizer, "image_token_id") and self.processor.tokenizer.image_token_id is not None:
              image_token_id = self.processor.tokenizer.image_token_id
 

@@ -44,7 +44,7 @@ class DataConfig:
     dataloader_pin_memory: bool = True
     dataloader_prefetch_factor: int = 0
     # Flex Scene Encoder data config
-    num_cameras: int = 4  # Number of camera views
+    num_cameras: int = 2  # Number of camera views (front_wide + front_tele)
     num_timestamps: int = 4  # Number of timestamps per camera
     max_len: int = 1024
     num_history_steps: int = 16

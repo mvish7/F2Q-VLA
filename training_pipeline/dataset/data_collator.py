@@ -169,11 +169,11 @@ class DataCollator:
                     batch["ego_history_rot"][mask] = 0.0
         
         
-        # 6. Generate camera_ids and timestamp_ids for Flex Scene Encoder
+        # Generate camera_ids and timestamp_ids for Flex Scene Encoder
         # Order: for each camera -> for each timestamp
-        # camera_ids:    [0,0,0,0, 1,1,1,1, 2,2,2,2, 3,3,3,3]
-        # timestamp_ids: [0,1,2,3, 0,1,2,3, 0,1,2,3, 0,1,2,3]
-        num_cameras = getattr(self.config, "num_cameras", 4)
+        # camera_ids:    [0,0,0,0, 1,1,1,1]  (front_wide=0, front_tele=1)
+        # timestamp_ids: [0,1,2,3, 0,1,2,3]
+        num_cameras = getattr(self.config, "num_cameras", 2)
         num_timestamps = getattr(self.config, "num_timestamps", 4)
         
         camera_ids = []
