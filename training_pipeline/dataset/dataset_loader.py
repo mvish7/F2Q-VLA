@@ -86,33 +86,14 @@ class DatasetLoader:
         # Check if processor is configured for flex scene encoder
         use_flex = getattr(self.processor, 'use_flex_scene_encoder', False)
 
-        # Create VQ-VAE tokenizer for trajectory tokenization (runs on CPU dynamically)
-        vqvae_tokenizer = None
-        if self.model_config and getattr(self.model_config, "vqvae_checkpoint_path", None):
-            import sys
-            import os
-            from pathlib import Path
-            vla_root = str(Path(__file__).resolve().parents[3])
-            if vla_root not in sys.path:
-                sys.path.insert(0, vla_root)
-                
-            from dfq_vla.vqvae_tokenizer import VQVAETrajectoryTokenizer
-            
-            vqvae_tokenizer = VQVAETrajectoryTokenizer(
-                checkpoint_path=self.model_config.vqvae_checkpoint_path,
-                num_embeddings=getattr(self.model_config, "vqvae_num_embeddings", 768),
-                hidden_dim=getattr(self.model_config, "vqvae_hidden_dim", 256),
-                embedding_dim=getattr(self.model_config, "vqvae_embedding_dim", 256),
-            )
-
-        # Resolve include_traj_projector: None → follows include_action_head
+        # Resolve include_traj_projector: None → default True
         include_traj = getattr(self.model_config, "include_traj_projector", None) if self.model_config else None
         if include_traj is None:
-            include_traj = getattr(self.model_config, "include_action_head", True) if self.model_config else True
+            include_traj = True
 
         return DataCollator(
             self.processor, image_token_id, self.config,
-            use_flex=use_flex, vqvae_tokenizer=vqvae_tokenizer,
+            use_flex=use_flex,
             camera_features=self.camera_features,
             include_traj_projector=include_traj,
         )

@@ -7,7 +7,6 @@ from dfq_vla.traj_utils import (
     create_vla_message,
     TRAJ_TOKEN,
 )
-from dfq_vla.action_head import ActionChunkingHead, create_action_head
 from dfq_vla.geometry import (
     rotmat_to_rot2d,
     rot2d_to_yaw,
@@ -24,8 +23,6 @@ __all__ = [
     "TrajectoryFusionMixin",
     "create_vla_message",
     "TRAJ_TOKEN",
-    "ActionChunkingHead",
-    "create_action_head",
     "rotmat_to_rot2d",
     "rot2d_to_yaw",
 ]

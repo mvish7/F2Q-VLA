@@ -12,7 +12,7 @@ import torch
 from dfq_vla.trajectory_projector import prepare_traj_input
 
 
-# Trajectory token constants (matching processor)
+# Trajectory token constants (history only — future is predicted as text)
 TRAJ_TOKEN = {
     "history": "<|traj_history|>",
     "history_start": "<|traj_history_start|>",
@@ -24,7 +24,7 @@ def create_vla_message(
     frames: torch.Tensor,
     num_traj_tokens: int = 16,
     system_prompt: str = "You are a driving assistant that generates safe and accurate actions.",
-    user_prompt: str = "output the chain-of-thought reasoning of the driving process, then output the future trajectory.",
+    user_prompt: str = "Analyze the driving scene and describe the intended driving action.",
 ) -> list[dict]:
     """Create a VLA message with image frames and trajectory placeholders.
     

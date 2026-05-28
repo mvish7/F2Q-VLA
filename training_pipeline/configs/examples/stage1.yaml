@@ -4,17 +4,10 @@ model:
   freeze_vision_tower: true
   freeze_llm: true
   freeze_projector: false
-  freeze_action_head: false
   freeze_traj_projector: true
-  include_action_head: false
   include_traj_projector: false
-  include_vqvae: false
   loss_weights:
     text: 1.0
-    xyz: 0.001
-    rot: 0.001
-  scheduled_sampling_prob: 0.0
-  action_head_grad_scale: 0.0
 
 data:
   dataset_path: "/media/vishal/datasets/ar1_coc_dataset/extracted/ar1_hf_dataset_new/"
@@ -51,9 +44,6 @@ training:
   torch_compile: false
   torch_compile_backend: "inductor"
   torch_compile_mode: "default"
-  #lr_scheduler_type: "cosine_with_restarts"
-  #lr_scheduler_kwargs:
-  #  num_cycles: 2  # Number of hard restarts for cosine_with_restarts scheduler
   warmup_ratio: 0.03  # Fraction of total steps used for linear warmup
   resume_from_checkpoint: ""
 
@@ -75,6 +65,3 @@ lora:
     - "projector"
     - "lm_head"
     - "embed_tokens"
-
-  # ["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"]
-  #     - "traj_projector"

@@ -4,16 +4,9 @@ model:
   freeze_vision_tower: true
   freeze_llm: false
   freeze_projector: false
-  freeze_action_head: false
   freeze_traj_projector: false
-  include_action_head: true
-  include_vqvae: true
   loss_weights:
     text: 1.0
-    xyz: 0.001
-    rot: 0.001
-  scheduled_sampling_prob: 0.0  # Prob of using LLM predictions for base_traj (reduces exposure bias)
-  action_head_grad_scale: 0.0  # Fraction of traj gradients flowing back to LLM (0=detach, 1=full)
 
 data:
   dataset_path: "/media/vishal/datasets/ar1_coc_dataset/extracted/ar1_hf_dataset_new/"
@@ -34,7 +27,7 @@ data:
 training:
   output_dir: "/media/vishal/workspace/projects/VLA/checkpoints/repair_stage_1_2"
   num_train_epochs: 1
-  learning_rate: 1.0e-4  # Default: Action Head, Flex, Projector, Traj MLP
+  learning_rate: 1.0e-4  # Default: Flex, Projector, Traj MLP
   llm_learning_rate: 2.0e-5  # LLM LoRA adapters
   weight_decay: 0.01
   per_device_train_batch_size: 4
@@ -68,7 +61,6 @@ lora:
   vision_enc_target_modules: []
   modules_to_save:
     - "flex_scene_encoder"
-    - "action_head"
     - "projector"
     - "traj_projector"
     - "lm_head"

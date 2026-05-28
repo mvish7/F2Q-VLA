@@ -22,20 +22,10 @@ class DFQVLAConfig(PretrainedConfig):
             vision_start_token_id=151652,
             vision_end_token_id=151653,
             tie_word_embeddings=True,
-            # Trajectory encoding config
-            traj_vocab_size: int = 768,
+            # Trajectory history encoding config
             tokens_per_history_traj: int = 16,  # 16 waypoints, 1 embedding each
-            traj_token_start_idx: int = None,  # Set during tokenizer init
             traj_token_ids: dict = None,  # Mapping for special tokens
             traj_input_dim: int = 5,  # Per-waypoint feature dim (xyz + yaw)
-            # Action head config (for future trajectory prediction)
-            scheduled_sampling_prob: float = 0.0,  # Prob of using LLM predictions vs GT for VQ-VAE decoding
-            action_head_grad_scale: float = 0.1,  # Scale factor for gradients flowing from action_head back to LLM
-            num_action_queries: int = 64,  # Number of future waypoints
-            num_action_layers: int = 4,  # Transformer decoder layers
-            action_nhead: int = 16,  # Attention heads
-            action_dim_feedforward: int = 4096,  # FFN dimension
-            action_dropout: float = 0.1,  # Dropout
             # Flex Scene Encoder config
             use_flex_scene_encoder: bool = True,  # Enable Flex encoder
             num_cameras: int = 4,  # Number of camera views
@@ -85,21 +75,10 @@ class DFQVLAConfig(PretrainedConfig):
         self.vision_start_token_id = vision_start_token_id
         self.vision_end_token_id = vision_end_token_id
         
-        # Trajectory encoding config
-        self.traj_vocab_size = traj_vocab_size
+        # Trajectory history encoding config
         self.tokens_per_history_traj = tokens_per_history_traj
-        self.traj_token_start_idx = traj_token_start_idx
         self.traj_token_ids = traj_token_ids
         self.traj_input_dim = traj_input_dim
-        self.scheduled_sampling_prob = scheduled_sampling_prob
-        self.action_head_grad_scale = action_head_grad_scale
-        
-        # Action head config
-        self.num_action_queries = num_action_queries
-        self.num_action_layers = num_action_layers
-        self.action_nhead = action_nhead
-        self.action_dim_feedforward = action_dim_feedforward
-        self.action_dropout = action_dropout
         
         # Flex Scene Encoder config
         self.use_flex_scene_encoder = use_flex_scene_encoder
@@ -112,4 +91,3 @@ class DFQVLAConfig(PretrainedConfig):
         self.flex_encoder_dropout = flex_encoder_dropout
         
         super().__init__(**kwargs, tie_word_embeddings=tie_word_embeddings)
-

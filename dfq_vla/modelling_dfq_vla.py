@@ -16,18 +16,7 @@ from transformers.modeling_outputs import ModelOutput
 from dfq_vla.configuration_dfq_vla import DFQVLAConfig
 from dfq_vla.trajectory_projector import TrajHistProjector, prepare_traj_input
 from dfq_vla.traj_utils import TrajectoryFusionMixin
-from dfq_vla.action_head import ActionChunkingHead
 from dfq_vla.flex_scene_encoder import FlexSceneEncoder, create_flex_scene_encoder
-import sys
-import os
-
-try:
-    from dfq_vla.vqvae_tokenizer import VQVAETrajectoryTokenizer
-except ImportError:
-    print(f"Warning: Could not import VQVAETrajectoryTokenizer.")
-    VQVAETrajectoryTokenizer = None
-
-from dfq_vla.loss import DFQVLALoss
 
 
 class DFQVLAProjector(nn.Module):
@@ -58,7 +47,6 @@ class DFQVLAOutputWithPast(ModelOutput):
         `past_key_values` input) to speed up sequential decoding.
     rope_deltas (`torch.LongTensor` of shape `(batch_size, )`, *optional*):
         The rope index difference between sequence length and multimodal rope.
-    text_loss, xyz_loss, rot_loss: Individual sub-loss components for logging.
     """
 
     loss: Optional[torch.FloatTensor] = None
@@ -67,9 +55,6 @@ class DFQVLAOutputWithPast(ModelOutput):
     hidden_states: Optional[tuple[torch.FloatTensor]] = None
     attentions: Optional[tuple[torch.FloatTensor]] = None
     rope_deltas: Optional[torch.LongTensor] = None
-    text_loss: Optional[torch.FloatTensor] = None
-    xyz_loss: Optional[torch.FloatTensor] = None
-    rot_loss: Optional[torch.FloatTensor] = None
 
 
 class DFQVLAPretrainedModel(PreTrainedModel):
@@ -89,7 +74,6 @@ class DFQVLAPretrainedModel(PreTrainedModel):
 class DFQVLAForConditionalGeneration(DFQVLAPretrainedModel, GenerationMixin, TrajectoryFusionMixin):
     _checkpoint_conversion_mapping = {}
     _tied_weights_keys = {"lm_head.weight": "language_model.embed_tokens.weight"}
-    _keys_to_ignore_on_load_missing = [r"^vqvae_tokenizer\..*"]
     config_class = DFQVLAConfig
     accepts_loss_kwargs = False
     _supports_flash_attn_2 = True
@@ -117,45 +101,11 @@ class DFQVLAForConditionalGeneration(DFQVLAPretrainedModel, GenerationMixin, Tra
         else:
             self.traj_projector = None
         
-        # 5. Initialize action head for future trajectory prediction
-        if getattr(config, 'include_action_head', True):
-            self._initialize_action_head(config)
-        else:
-            self.action_head = None
-        
-        # 6. Initialize Loss Calculator
-        loss_weights = getattr(config, "loss_weights", None)
-        self.loss_calculator = DFQVLALoss(loss_weights)
-        
-        # 7. Initialize Flex Scene Encoder (optional)
+        # 5. Initialize Flex Scene Encoder (optional)
         self._initialize_flex_scene_encoder(config)
-        
-        # 8. Initialize VQ-VAE Trajectory Decoder (Phase 2)
-        if getattr(config, 'include_vqvae', True):
-            self._initialize_vqvae(config)
-        else:
-            self.vqvae_tokenizer = None
 
-        # 9. Tie weights if necessary (standard HF practice)
+        # 6. Tie weights if necessary (standard HF practice)
         self.post_init()
-        
-    def _initialize_vqvae(self, config):
-        """Initialize frozen VQ-VAE for trajectory decoding."""
-        vqvae_checkpoint_path = getattr(config, "vqvae_checkpoint_path", None)
-        if vqvae_checkpoint_path and VQVAETrajectoryTokenizer is not None:
-            print(f"Loading VQ-VAE from {vqvae_checkpoint_path}...")
-            # Initialize unified tokenizer wrapper (also freezes weights)
-            self.vqvae_tokenizer = VQVAETrajectoryTokenizer(
-                checkpoint_path=vqvae_checkpoint_path,
-                num_embeddings=getattr(config, "vqvae_num_embeddings", 768),
-                embedding_dim=getattr(config, "vqvae_embedding_dim", 256),
-                hidden_dim=getattr(config, "vqvae_hidden_dim", 256)
-            )
-            print("Successfully loaded frozen VQ-VAE tokenizer.")
-        else:
-            self.vqvae_tokenizer = None
-            if getattr(config, "vqvae_checkpoint_path", None) is not None:
-                print("Warning: config specifies vqvae_checkpoint_path but VQVAETrajectoryTokenizer import failed.")
     
     def _initialize_traj_projector(self, config):
         """Initialize MLP projector for trajectory history encoding."""
@@ -163,17 +113,6 @@ class DFQVLAForConditionalGeneration(DFQVLAPretrainedModel, GenerationMixin, Tra
         self.traj_projector = TrajHistProjector(
             input_dim=traj_input_dim,
             hidden_size=config.hidden_size,
-        )
-    
-    def _initialize_action_head(self, config):
-        """Initialize action chunking head for future trajectory prediction."""
-        self.action_head = ActionChunkingHead(
-            hidden_size=config.hidden_size,
-            num_queries=config.num_action_queries,
-            num_layers=config.num_action_layers,
-            nhead=config.action_nhead,
-            dim_feedforward=config.action_dim_feedforward,
-            dropout=config.action_dropout,
         )
     
     def _initialize_flex_scene_encoder(self, config):
@@ -300,7 +239,7 @@ class DFQVLAForConditionalGeneration(DFQVLAPretrainedModel, GenerationMixin, Tra
                     ego_history_rot=ego_history_rot,
                 )
 
-        # 3. Pass to LLM with output_hidden_states and output_attentions
+        # 3. Pass to LLM
         outputs = self.language_model(
             input_ids=None,
             position_ids=position_ids,
@@ -319,115 +258,10 @@ class DFQVLAForConditionalGeneration(DFQVLAPretrainedModel, GenerationMixin, Tra
         slice_indices = slice(-logits_to_keep, None) if isinstance(logits_to_keep, int) else logits_to_keep
         logits = self.lm_head(hidden_states[:, slice_indices, :])
 
+        # Calculate Causal LM Loss (text-only — action reasoning is predicted as text tokens)
         loss = None
-        loss_output = None
-        
-        # Calculate Causal LM Loss
-        lm_loss = None
         if labels is not None:
-            # # Assuming you calculate text_loss manually
-            # text_loss = F.cross_entropy(logits.view(-1, 152442), labels.view(-1), ignore_index=-100)
-
-            # # Add this debug print!
-            # active_tokens = (labels != -100).sum()
-            # print(f"Raw Text Loss: {text_loss.item()}")
-            # print(f"Active Tokens: {active_tokens.item()}")
-            # print(f"Loss per Token: {(text_loss / active_tokens).item()}")
-            lm_loss = self.loss_function(logits=logits, labels=labels, vocab_size=self.config.text_config.vocab_size)
-            
-        # Trajectory Prediction and Loss
-        ego_future_xyz = kwargs.get("ego_future_xyz")
-        ego_future_rot = kwargs.get("ego_future_rot")
-        
-        traj_output = None
-        xyz_loss, rot_loss = None, None
-        
-        # Only predict trajectory if we have labels or are explicitly asked (implied by having labels in train time)
-        # Note: In inference we usually call predict_future_trajectory manually
-        if self.action_head is not None and ((ego_future_xyz is not None and ego_future_rot is not None) or (labels is not None and "ego_future_xyz" in kwargs)):
-             # Scale gradients flowing from action_head back to LLM.
-             # Traj loss gradients are ~7x larger than text loss, so without
-             # scaling they dominate the shared LLM LoRA weights and hurt
-             # token prediction accuracy.
-             # Forward: full hidden_states. Backward: attenuated by grad_scale.
-             grad_scale = getattr(self.config, 'action_head_grad_scale', 0.1)
-             vlm_context = hidden_states * grad_scale + hidden_states.detach() * (1 - grad_scale)
-             
-             # Create memory_key_padding_mask for action head (True = padded/ignored)
-             memory_key_padding_mask = None
-             if attention_mask is not None:
-                 memory_key_padding_mask = ~attention_mask.bool()  # Invert: 0 -> True (pad), 1 -> False (keep)
-                 
-             # Phase 2: Extract VQ-VAE indices from input_ids and decode
-             base_traj = None
-             if hasattr(self, "vqvae_tokenizer") and self.vqvae_tokenizer is not None and input_ids is not None:
-                 B = input_ids.shape[0]
-                 start_id = self.config.traj_token_ids["future_start"]
-                 traj_start_idx = self.config.traj_token_start_idx
-                 traj_vocab_size = getattr(self.config, 'traj_vocab_size', 768)
-                 
-                 # Scheduled sampling: use LLM predictions instead of GT with some probability
-                 use_predicted = (
-                     self.training
-                     and getattr(self.config, 'scheduled_sampling_prob', 0.0) > 0
-                     and torch.rand(1).item() < self.config.scheduled_sampling_prob
-                 )
-                 
-                 if use_predicted:
-                     source_ids = logits.argmax(dim=-1)  # [B, S]
-                 else:
-                     source_ids = input_ids
-                 
-                 # Extract indices: find future_start marker, read next 8 tokens
-                 vqvae_indices = torch.zeros(B, 8, dtype=torch.long, device=input_ids.device)
-                 found_all = True
-                 
-                 for b in range(B):
-                    matches = (input_ids[b] == start_id).nonzero(as_tuple=True)[0]
-                    if len(matches) > 0:
-                        start_pos = matches[-1].item()
-                        for i in range(8):
-                            if start_pos + 1 + i < source_ids.shape[1]:
-                                token = source_ids[b, start_pos + 1 + i].item()
-                                if traj_start_idx <= token < traj_start_idx + traj_vocab_size:
-                                    vqvae_indices[b, i] = token - traj_start_idx
-                                else:
-                                    found_all = False
-                                    break
-                    else:
-                        found_all = False
-                 
-                 if found_all:
-                     with torch.no_grad():
-                         # vqvae_indices is [B, 8]
-                         # Decode returns [B, 64, 5] (x, y, z, sin, cos) natively inside vqvae_tokenizer
-                         base_traj = self.vqvae_tokenizer.decode(vqvae_indices).to(vlm_context.dtype).to(vlm_context.device)
-             
-             if base_traj is not None:
-                 traj_output = self.predict_future_trajectory(
-                     vlm_context,
-                     base_traj=base_traj,
-                     normalize_rot=True,
-                     attention_mask=memory_key_padding_mask,
-                 )
-             else:
-                 # Fallback if VQ-VAE extraction failed or not available
-                 print("Warning: VQ-VAE base trajectory could not be extracted. ActionChunkingHead requires base_traj.")
-             
-        # Compute Total Loss
-        if lm_loss is not None or (traj_output is not None):
-            pred_xyz = traj_output["xyz"] if traj_output else None
-            pred_rot = traj_output["rot2d"] if traj_output else None
-            
-            loss_output = self.loss_calculator(
-                text_loss=lm_loss,
-                pred_xyz=pred_xyz,
-                target_xyz=ego_future_xyz,
-                pred_rot=pred_rot,
-                target_rot=ego_future_rot
-            )
-            loss = loss_output.total_loss
-
+            loss = self.loss_function(logits=logits, labels=labels, vocab_size=self.config.text_config.vocab_size)
 
         return DFQVLAOutputWithPast(
             loss=loss,
@@ -435,43 +269,7 @@ class DFQVLAForConditionalGeneration(DFQVLAPretrainedModel, GenerationMixin, Tra
             past_key_values=outputs.past_key_values,
             hidden_states=outputs.hidden_states if output_hidden_states else None,
             attentions=outputs.attentions if output_attentions else None,
-            text_loss=loss_output.text_loss if loss_output is not None else None,
-            xyz_loss=loss_output.xyz_loss if loss_output is not None else None,
-            rot_loss=loss_output.rot_loss if loss_output is not None else None,
         )
-    
-    def predict_future_trajectory(
-        self,
-        vlm_context: torch.Tensor,
-        base_traj: torch.Tensor,
-        normalize_rot: bool = True,
-        attention_mask: torch.Tensor | None = None,
-    ) -> dict[str, torch.Tensor]:
-        """Predict future trajectory from VLM context and coarse base representation.
-        
-        This method uses the action head to predict delta waypoints via cross-attention
-        to a concatenated memory of VLM context and the VQ-VAE decoded base trajectory.
-        
-        Args:
-            vlm_context: VLM hidden states. Shape: [B, S, hidden_size].
-            base_traj: coarse base trajectory from VQ-VAE. Shape: [B, 64, 5].
-            normalize_rot: If True, normalize the 2D rotation representation to unit circle.
-            attention_mask: Optional mask for padded positions. Shape: [B, S].
-                True indicates padded (ignored) positions.
-            
-        Returns:
-            Dictionary containing:
-                - "xyz": Predicted XYZ positions [B, num_queries, 3]
-                - "rot2d": 2D rotation representation [B, num_queries, 2]
-        """
-        return self.action_head(
-            vlm_context,
-            base_traj=base_traj,
-            normalize_rot=normalize_rot,
-            memory_key_padding_mask=attention_mask,
-        )
-
-
 
     # Required for generation (model.generate)
     def prepare_inputs_for_generation(

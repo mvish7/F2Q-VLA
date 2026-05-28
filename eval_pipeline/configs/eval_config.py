@@ -16,12 +16,9 @@ from training_pipeline.configs.configs import (
 
 @dataclass
 class EvalConfig:
-    """Evaluation hyperparameters (sampling + metric settings)."""
+    """Evaluation hyperparameters."""
 
-    num_samples: int = 6  # K for minADE-K (must be >= 6 for minADE6)
-    temperature: float = 0.7
-    top_p: float = 0.9
-    max_new_tokens: int = 32  # 8 VQ indices + delimiters + margin
+    max_new_tokens: int = 256  # Enough for action reasoning text
     batch_size: int = 1
     output_file: str = "eval_results.json"
 

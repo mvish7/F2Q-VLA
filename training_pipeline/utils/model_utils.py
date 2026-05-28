@@ -44,7 +44,6 @@ def load_model_and_processor(config) -> Tuple[Any, Any]:
             "vision_tower",      # DinoV3 vision encoder
             "projector",         # Vision-to-LM projector
             "flex_scene_encoder", # Multi-camera/timestamp encoder
-            "action_head",       # Action chunking head
             "lm_head",           # LM classification head (tied with embed_tokens)
             "embed_tokens",      # MUST be skipped if lm_head is skipped due to weight tying!
         ]
@@ -58,23 +57,14 @@ def load_model_and_processor(config) -> Tuple[Any, Any]:
         print(f"Using QLoRA with 4-bit quantization: quant_type={config.qlora.bnb_4bit_quant_type}, compute_dtype={compute_dtype}")
         print(f"Skipping modules from quantization: {skip_modules}")
     
-    # Load config and inject VQ-VAE attributes before model init
+    # Load config and inject component inclusion flags before model init
     hf_config = AutoConfig.from_pretrained(config.model.model_path, trust_remote_code=False)
-    hf_config.vqvae_checkpoint_path = getattr(config.model, "vqvae_checkpoint_path", None)
-    hf_config.vqvae_num_embeddings = getattr(config.model, "vqvae_num_embeddings", 768)
-    hf_config.vqvae_hidden_dim = getattr(config.model, "vqvae_hidden_dim", 256)
-    hf_config.vqvae_embedding_dim = getattr(config.model, "vqvae_embedding_dim", 256)
     
-    # Inject component inclusion flags
-    hf_config.include_action_head = getattr(config.model, "include_action_head", True)
-    # Resolve include_traj_projector: None → follows include_action_head
+    # Resolve include_traj_projector: None → default True
     include_traj = getattr(config.model, "include_traj_projector", None)
     if include_traj is None:
-        include_traj = hf_config.include_action_head
+        include_traj = True
     hf_config.include_traj_projector = include_traj
-    hf_config.include_vqvae = getattr(config.model, "include_vqvae", True)
-    hf_config.scheduled_sampling_prob = getattr(config.model, "scheduled_sampling_prob", 0.0)
-    hf_config.action_head_grad_scale = getattr(config.model, "action_head_grad_scale", 0.1)
 
     model = AutoModelForCausalLM.from_pretrained(
         config.model.model_path,
@@ -87,7 +77,7 @@ def load_model_and_processor(config) -> Tuple[Any, Any]:
     
     # Ensure custom modules are natively cast to model's torch_dtype
     # This prevents Float vs BFloat16 crashes when running purely in BFloat16 without autocast
-    for module_name in ["flex_scene_encoder", "projector", "action_head", "traj_projector", "loss_calculator"]:
+    for module_name in ["flex_scene_encoder", "projector", "traj_projector"]:
         if hasattr(model, module_name) and getattr(model, module_name) is not None:
             getattr(model, module_name).to(torch_dtype)
     
@@ -152,17 +142,6 @@ def apply_freezing(model, config):
         for param in model.projector.parameters():
             param.requires_grad = False
 
-    # 4. Action Head
-    # Check if attribute exists (it might not on older configs, but we added it to dataclass)
-    freeze_action_head = getattr(config.model, "freeze_action_head", False)
-    if freeze_action_head:
-        print("Freezing action head...")
-        # Check if model has action_head
-        if hasattr(model, "action_head"):
-            for param in model.action_head.parameters():
-                param.requires_grad = False
-        else:
-            print("Warning: requested to freeze action_head, but model does not have 'action_head' attribute.")
 
     # 5. Flex Scene Encoder
     freeze_flex_encoder = getattr(config.model, "freeze_flex_encoder", False)
@@ -294,7 +273,6 @@ def print_model_parameters(model):
         "Traj Projector": 0,
         "Language Model": 0,
         "LM Head": 0,
-        "Action Head": 0,
         "Other": 0
     }
     trainable_blocks = {k: 0 for k in blocks.keys()}
@@ -315,8 +293,6 @@ def print_model_parameters(model):
             key = "Language Model"
         elif "lm_head" in name:
             key = "LM Head"
-        elif "action_head" in name:
-            key = "Action Head"
         else:
             key = "Other"
             

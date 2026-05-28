@@ -13,25 +13,14 @@ class ModelConfig:
     freeze_vision_tower: bool = True
     freeze_llm: bool = False
     freeze_projector: bool = False
-    freeze_action_head: bool = False
     freeze_flex_encoder: bool = False  # Flex scene encoder freezing
     freeze_traj_projector: bool = False
     
     # Component inclusion (set False to exclude from model entirely)
-    include_action_head: bool = True
-    include_traj_projector: Optional[bool] = None  # Defaults to include_action_head value
-    include_vqvae: bool = True
-    scheduled_sampling_prob: float = 0.0  # Prob of using LLM predictions for VQ-VAE decoding (0=teacher forcing)
-    action_head_grad_scale: float = 0.1  # Scale factor for gradients from action_head → LLM (0=detach, 1=full)
+    include_traj_projector: Optional[bool] = None  # Defaults to True
     
     # Loss weights
-    loss_weights: dict = field(default_factory=lambda: {"text": 1.0, "xyz": 0.001, "rot": 0.001})
-    
-    # VQ-VAE trajectory tokenizer
-    vqvae_checkpoint_path: str = "/media/vishal/workspace/projects/VQ-VAE/checkpoints/codebook768_2drot_high_perp/epoch43_best.pt"     # Path to pre-trained VQ-VAE checkpoint
-    vqvae_num_embeddings: int = 768     # Codebook size K
-    vqvae_hidden_dim: int = 256         # Must match trained model
-    vqvae_embedding_dim: int = 256      # Must match trained model
+    loss_weights: dict = field(default_factory=lambda: {"text": 1.0})
 
 @dataclass
 class DataConfig:

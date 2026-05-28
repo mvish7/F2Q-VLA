@@ -4,11 +4,8 @@ model:
   freeze_vision_tower: true
   freeze_llm: true
   freeze_projector: false
-  freeze_action_head: false
   loss_weights:
     text: 1.0
-    xyz: 1.0
-    rot: 1.0
 
 data:
   dataset_path: "/media/vishal/datasets/ar1_coc_dataset/extracted/ar1_hf_with_coc_reasoning4/"
@@ -50,8 +47,6 @@ lora:
   r: 64
   lora_alpha: 128
   target_modules:
-    # Regex patterns (PEFT uses re.fullmatch). Anchored to language_model/vision_tower
-    # so action_head and flex_scene_encoder sub-modules are never matched.
     # LLM layers
     - "q_proj"
     - "k_proj"
@@ -65,6 +60,4 @@ lora:
 
   modules_to_save:
     - "flex_scene_encoder"
-    - "action_head"
     - "projector"
-

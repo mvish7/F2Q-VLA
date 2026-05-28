@@ -13,63 +13,38 @@ def get_fields_from_sample(sample: Dict[str, Any]):
         # pixmo dataset
         return sample["image_path"], random.choice(CAPTION_PROMPTS), sample["caption"]
 
-# Trajectory tokens (mirrored from dfq_vla/traj_utils.py to avoid circular imports if needed, 
-# or we can import if the package is installed. For safety in this script, defining here.)
+# Trajectory tokens (history only — future is predicted as natural language text)
 TRAJ_TOKEN = {
     "history": "<|traj_history|>",
     "history_start": "<|traj_history_start|>",
     "history_end": "<|traj_history_end|>",
-    "future_start": "<|traj_future_start|>",
-    "future_end": "<|traj_future_end|>",
 }
 
-def format_vla_data(sample: Dict[str, Any], vqvae_indices: list[int], use_flex: bool = False,
-                    sample_image:torch.Tensor = None, include_traj_history: bool = True,
+def format_vla_data(sample: Dict[str, Any], use_flex: bool = False,
+                    sample_image: torch.Tensor = None, include_traj_history: bool = True,
                     num_traj_tokens: int = 16) -> list[Dict[str, Any]]:
     """Format a VLA sample into a conversation list for DFQ VLA.
     
+    The assistant target is the `action_reasoning` text from the dataset,
+    which the LLM learns to predict as natural language tokens.
+    
     Args:
-        sample: Raw dataset sample.
+        sample: Raw dataset sample. Must contain 'action_reasoning' key.
         use_flex: If True, use single image placeholder for Flex Scene Encoder.
                   If False, use per-image placeholders (16 total).
+        sample_image: Sample image tensor for placeholder.
         include_traj_history: If True, include trajectory history placeholder tokens.
                               Set to False when traj_projector is excluded.
+        num_traj_tokens: Number of history trajectory placeholder tokens.
     
     Returns:
         Conversation list for chat template.
     """
     # 1. System Prompt
-    system_msg = "You are an expert self-driving system that generates safe and accurate future driving trajectories."
+    system_msg = "You are an expert self-driving system. Analyze the driving scene and describe the intended driving action."
     
     # 2. User Prompt Components
     user_content = []
-    
-    # # a. Images from image_paths
-    # if "image_paths" in sample:
-    #     if use_flex:
-    #         # Flex mode: Single image placeholder for entire scene
-    #         # All images are still loaded, but represented by one token block
-    #         # The Flex encoder compresses them into K scene tokens
-    #         # We pick first image path as placeholder (collator loads all images)
-    #         first_path = None
-    #         for cam_name, paths in sample["image_paths"].items():
-    #             if paths:
-    #                 first_path = paths[0]
-    #                 break
-    #         if first_path:
-    #             user_content.append({
-    #                 "type": "image",
-    #                 "image": first_path,  # Placeholder - collator loads all images
-    #             })
-    #     else:
-    #         # Legacy mode: Per-image placeholders (4 cameras × 4 timestamps = 16)
-    #         # Order: Camera, then Time
-    #         for cam_name, paths in sample["image_paths"].items():
-    #             for path in paths:
-    #                 user_content.append({
-    #                     "type": "image",
-    #                     "image": path,
-    #                 })
     
     user_content.append({
         "type": "image",
@@ -77,7 +52,7 @@ def format_vla_data(sample: Dict[str, Any], vqvae_indices: list[int], use_flex: 
     })
     
     # b. Trajectory History Placeholder (only when traj_projector is included)
-    user_text = "By analyzing the given images and the past trajectory, predict 8 discrete ids corresponding to the future trajectory."
+    user_text = "Analyze the driving scene and describe the intended driving action."
     
     if include_traj_history:
         hist_traj_placeholder = (
@@ -92,10 +67,8 @@ def format_vla_data(sample: Dict[str, Any], vqvae_indices: list[int], use_flex: 
         "text": user_text
     })
 
-    # 3. Assistant Target — VQ-VAE trajectory indices
-    traj_tokens = "".join(f"<i{idx}>" for idx in vqvae_indices)
-    assistant_text = f"{TRAJ_TOKEN['future_start']}{traj_tokens}{TRAJ_TOKEN['future_end']}"
-    assistant_text = assistant_text.replace(" ", "")
+    # 3. Assistant Target — action reasoning text from dataset
+    action_reasoning = sample.get("action_reasoning", "")
     
     return [
         {
@@ -108,6 +81,6 @@ def format_vla_data(sample: Dict[str, Any], vqvae_indices: list[int], use_flex: 
         },
         {
             "role": "assistant",
-            "content": [{"type": "text", "text": assistant_text}],
+            "content": [{"type": "text", "text": action_reasoning}],
         },
     ]

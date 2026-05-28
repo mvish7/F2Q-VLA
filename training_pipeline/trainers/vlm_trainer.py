@@ -3,6 +3,7 @@ import torch
 import gc
 from trl import SFTTrainer, SFTConfig
 from transformers import TrainingArguments
+from torch.optim.lr_scheduler import CosineAnnealingLR
 from ..configs.configs import VLMTrainingConfig
 from ..configs.config_utils import save_config
 from ..utils.param_groups import build_param_groups
@@ -25,10 +26,18 @@ class VLMTrainer(SFTTrainer):
         peft_config=None
     ):
         self.vlm_config = config
+
+        self.model = model
+        self.args = args
+
+        optimizer = self.create_optimizer()
+
+        lr_scheduler = CosineAnnealingLR(optimizer, T_max=1460, eta_min=1e-7)
         
         # Initialize parent SFTTrainer
         super().__init__(
             model=model,
+            optimizers=(optimizer, lr_scheduler),
             args=args,
             train_dataset=train_dataset,
             eval_dataset=eval_dataset,
@@ -46,9 +55,6 @@ class VLMTrainer(SFTTrainer):
         When optim="muon_plus_adamw", routes 2D weight matrices to Muon
         and everything else to AdamW (per LR-group).
         """
-        if self.optimizer is not None:
-            return self.optimizer
-        
         param_groups = build_param_groups(self.model, self.vlm_config)
         
         if self.vlm_config.training.optim == "muon_plus_adamw":
@@ -69,18 +75,14 @@ class VLMTrainer(SFTTrainer):
         return self.optimizer
     
     def compute_loss(self, model, inputs, return_outputs=False, num_items_in_batch=None):
-        """Override to extract and log sub-losses (text, xyz, rot) to TensorBoard."""
+        """Override to log text loss to TensorBoard."""
         (loss, outputs) = super().compute_loss(
             model, inputs, return_outputs=True, num_items_in_batch=num_items_in_batch,
         )
         
-        # Log individual sub-losses when available
-        if hasattr(outputs, "text_loss") and outputs.text_loss is not None:
-            self._metrics["text_loss"].append(outputs.text_loss.detach().item())
-        if hasattr(outputs, "xyz_loss") and outputs.xyz_loss is not None:
-            self._metrics["xyz_loss"].append(outputs.xyz_loss.detach().item())
-        if hasattr(outputs, "rot_loss") and outputs.rot_loss is not None:
-            self._metrics["rot_loss"].append(outputs.rot_loss.detach().item())
+        # Log text loss (which is now the only loss)
+        if loss is not None:
+            self._metrics["text_loss"].append(loss.detach().item())
         
         return (loss, outputs) if return_outputs else loss
         

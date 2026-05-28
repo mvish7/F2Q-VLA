@@ -10,13 +10,14 @@ from .data_extractor import get_images_from_sample
 class DataCollator:
     """Collator that encodes text and image pairs for VLM training."""
     
-    def __init__(self, processor: Any, image_token_id: int, config: DataConfig, use_flex: bool = False, vqvae_tokenizer=None, camera_features=None, include_traj_projector: bool = True):
+    def __init__(self, processor: Any, image_token_id: int, config: DataConfig,
+                 use_flex: bool = False, camera_features=None,
+                 include_traj_projector: bool = True):
         self.processor = processor
         self.image_token_id = image_token_id
         self.config = config
         self.use_flex = use_flex
         self.include_traj_projector = include_traj_projector
-        self.vqvae_tokenizer = vqvae_tokenizer
         self.local_avdi = physical_ai_av.PhysicalAIAVDatasetInterface(cache_dir=config.data_base_path)
         self.camera_features = camera_features or []
         self._setup_assistant_masking()
@@ -71,7 +72,7 @@ class DataCollator:
 
         # placeholders for Trajectory Data (History & Future)
         # History is needed for the model input via TrajHistProjector
-        # Future is needed for loss calculation and action head
+        # Future is kept for potential eval metrics
         
         ego_history_xyz_list = []
         ego_history_rot_list = []
@@ -102,11 +103,8 @@ class DataCollator:
         for sample in examples:
             curr_hist_xyz, curr_hist_rot, curr_fut_xyz, curr_fut_rot = self._extract_traj_data(sample)
             
-            # Encode future trajectory → 8 VQ-VAE codebook indices
-            vqvae_indices = self.vqvae_tokenizer.encode(curr_fut_xyz, curr_fut_rot)
-            
             formatted_sample = format_vla_data(
-                sample, vqvae_indices, use_flex=self.use_flex,
+                sample, use_flex=self.use_flex,
                 sample_image=all_images[0][0][0],
                 include_traj_history=self.include_traj_projector,
                 num_traj_tokens=self.config.num_history_steps,
@@ -143,7 +141,7 @@ class DataCollator:
         
         # 4. Prepare Labels for Causal LM
         # Mask everything before assistant content so the model only learns
-        # to predict the assistant response (traj tokens + delimiters + <|im_end|>).
+        # to predict the assistant response (action reasoning text + <|im_end|>).
         labels = batch["input_ids"].clone()
         
         for i in range(labels.shape[0]):

@@ -1,6 +1,6 @@
 """DFQ VLA Evaluation Pipeline.
 
-Evaluates trajectory prediction quality using ADE and minADE metrics.
+Evaluates action reasoning text generation quality.
 Reuses model loading, dataset loading, and preprocessing from the training pipeline.
 
 Usage:
@@ -24,8 +24,7 @@ from training_pipeline.dataset import DatasetLoader
 
 # Eval pipeline components
 from eval_pipeline.configs.eval_config import load_eval_config
-from eval_pipeline.metrics import compute_ade, compute_min_ade, aggregate_metrics
-from eval_pipeline.inference import generate_trajectory_samples
+from eval_pipeline.inference import generate_action_reasoning
 
 
 def main():
@@ -40,7 +39,6 @@ def main():
     print(f"Loaded eval configuration from {args.config}")
 
     # Build a training-compatible config for reusing model/dataset loading
-    # We create a minimal VLMTrainingConfig wrapper
     from training_pipeline.configs.configs import VLMTrainingConfig, TrainingConfig
 
     training_config = TrainingConfig(output_dir="/tmp/eval_unused")
@@ -83,7 +81,7 @@ def main():
     print("Loading dataset...")
     dataset_loader = DatasetLoader(eval_cfg.data, processor, model_config=eval_cfg.model)
     _, eval_dataset = dataset_loader.load_dataset()
-    eval_dataset = eval_dataset[:20]
+    eval_dataset = eval_dataset[0:20]
     data_collator = dataset_loader.get_collator()
 
     if not eval_dataset:
@@ -107,101 +105,58 @@ def main():
     # -------------------------------------------------------------------------
     # 5. Evaluation Loop
     # -------------------------------------------------------------------------
-    num_samples_k = eval_cfg.eval.num_samples
-    temperature = eval_cfg.eval.temperature
-    top_p = eval_cfg.eval.top_p
     max_new_tokens = eval_cfg.eval.max_new_tokens
 
-    all_ade = []
-    all_min_ade3 = []
-    all_min_ade6 = []
-    num_failed = 0
+    all_results = []
 
-    print(f"\nStarting evaluation (K={num_samples_k}, T={temperature}, top_p={top_p})...")
-    print(f"Generating {num_samples_k} trajectory samples per input.\n")
+    print(f"\nStarting evaluation (max_new_tokens={max_new_tokens})...")
     start_time = time.time()
 
     for batch_idx, batch in enumerate(tqdm(eval_dataloader, desc="Evaluating")):
-        # Ground truth future trajectory [B, T, 3]
-        gt_xyz = batch["ego_future_xyz"].to(device)
-
-        # Generate K trajectory samples
-        traj_samples = generate_trajectory_samples(
+        # Generate action reasoning text
+        generated_texts = generate_action_reasoning(
             model=model,
             batch=batch,
             processor=processor,
-            num_samples=num_samples_k,
-            temperature=temperature,
-            top_p=top_p,
             max_new_tokens=max_new_tokens,
         )
 
-        if len(traj_samples) == 0:
-            num_failed += batch["input_ids"].shape[0]
-            continue
-
-        # Process per-sample in batch
-        B = gt_xyz.shape[0]
-        for b in range(B):
-            gt_b = gt_xyz[b]  # [T, 3]
-
-            # Collect all valid predictions for this sample
-            pred_xyz_list = []
-            for traj in traj_samples:
-                pred_xyz_list.append(traj["xyz"][b])  # [64, 3]
-
-            if not pred_xyz_list:
-                num_failed += 1
-                continue
-
-            pred_samples = torch.stack(pred_xyz_list)  # [K_valid, 64, 3]
-
-            # ADE: use first sample
-            ade_val = compute_ade(pred_samples[0], gt_b).item()
-            all_ade.append(ade_val)
-
-            # minADE3: min over first 3 samples (if available)
-            k3 = min(3, pred_samples.shape[0])
-            min_ade3_val = compute_min_ade(pred_samples[:k3], gt_b).item()
-            all_min_ade3.append(min_ade3_val)
-
-            # minADE6: min over first 6 samples (if available)
-            k6 = min(6, pred_samples.shape[0])
-            min_ade6_val = compute_min_ade(pred_samples[:k6], gt_b).item()
-            all_min_ade6.append(min_ade6_val)
+        # Store results
+        for text in generated_texts:
+            all_results.append({
+                "generated_reasoning": text,
+            })
 
         # Periodic logging
         if (batch_idx + 1) % 10 == 0:
-            running = aggregate_metrics(all_ade, all_min_ade3, all_min_ade6)
             tqdm.write(
                 f"  [Batch {batch_idx + 1}] "
-                f"ADE={running['ADE']:.4f}  "
-                f"minADE3={running['minADE3']:.4f}  "
-                f"minADE6={running['minADE6']:.4f}  "
-                f"(failed={num_failed})"
+                f"Generated {len(all_results)} samples so far"
             )
 
     elapsed = time.time() - start_time
 
     # -------------------------------------------------------------------------
-    # 6. Aggregate & Report
+    # 6. Report
     # -------------------------------------------------------------------------
-    results = aggregate_metrics(all_ade, all_min_ade3, all_min_ade6)
-    results["num_failed"] = num_failed
-    results["elapsed_seconds"] = round(elapsed, 1)
-    results["config"] = args.config
+    results = {
+        "num_samples": len(all_results),
+        "elapsed_seconds": round(elapsed, 1),
+        "config": args.config,
+        "predictions": all_results,
+    }
 
     print("\n" + "=" * 60)
     print("EVALUATION RESULTS")
     print("=" * 60)
     print(f"  Samples evaluated: {results['num_samples']}")
-    print(f"  Failed samples:    {num_failed}")
     print(f"  Time elapsed:      {elapsed:.1f}s")
-    print(f"  ─────────────────────────────────")
-    print(f"  ADE:               {results['ADE']:.4f}")
-    print(f"  minADE3:           {results['minADE3']:.4f}")
-    print(f"  minADE6:           {results['minADE6']:.4f}")
     print("=" * 60)
+
+    # Print first few predictions
+    for i, r in enumerate(all_results[:3]):
+        print(f"\n--- Sample {i} ---")
+        print(f"  Generated: {r['generated_reasoning'][:200]}...")
 
     # Save results to JSON
     output_file = eval_cfg.eval.output_file

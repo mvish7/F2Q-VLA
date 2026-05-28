@@ -11,7 +11,7 @@ def build_param_groups(model: Any, config: Any) -> list[dict]:
     """Build optimizer parameter groups with per-module learning rates.
     
     Groups trainable parameters into:
-    - **default**: Projector, Flex, Traj MLP, Action Head, etc.
+    - **default**: Projector, Flex, Traj MLP, etc.
       Uses `config.training.learning_rate`.
     - **llm**: LLM LoRA adapters AND LLM interface layers (embed_tokens, lm_head).
       Uses `config.training.llm_learning_rate` (falls back to default).

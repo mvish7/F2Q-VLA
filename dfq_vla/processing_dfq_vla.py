@@ -26,16 +26,14 @@ class DFQVLAProcessor(ProcessorMixin):
     image_processor_class = "CLIPImageProcessor"
     tokenizer_class = ("Qwen2Tokenizer", "Qwen2TokenizerFast")
     
-    # Trajectory token constants
+    # Trajectory token constants (history only — future is predicted as text)
     TRAJ_TOKEN = {
         "history": "<|traj_history|>",
         "history_start": "<|traj_history_start|>",
         "history_end": "<|traj_history_end|>",
-        "future_start": "<|traj_future_start|>",
-        "future_end": "<|traj_future_end|>",
     }
 
-    def __init__(self, image_processor, tokenizer, chat_template, vision_config=None, traj_vocab_size=768, 
+    def __init__(self, image_processor, tokenizer, chat_template, vision_config=None,
                  use_flex_scene_encoder=False, num_scene_tokens=512, **kwargs):
         super().__init__(image_processor, tokenizer, chat_template=chat_template)
         self.vision_config = vision_config
@@ -68,26 +66,16 @@ class DFQVLAProcessor(ProcessorMixin):
         self.use_flex_scene_encoder = use_flex_scene_encoder
         self.num_scene_tokens = num_scene_tokens
         
-        # Add trajectory tokens to tokenizer
-        self.traj_vocab_size = traj_vocab_size
-        self._add_trajectory_tokens(tokenizer, traj_vocab_size)
+        # Add trajectory history tokens to tokenizer
+        self._add_trajectory_tokens(tokenizer)
     
-    def _add_trajectory_tokens(self, tokenizer, traj_vocab_size: int):
-        """Add trajectory tokens to the tokenizer.
+    def _add_trajectory_tokens(self, tokenizer):
+        """Add trajectory history special tokens to the tokenizer.
         
-        Args:
-            tokenizer: The tokenizer to modify.
-            traj_vocab_size: Number of discrete trajectory tokens to add.
+        Only adds history-related tokens. Future trajectory is predicted as
+        natural language text and requires no special tokens.
         """
-        # Add discrete trajectory tokens (<i0> to <i{traj_vocab_size-1}>)
-        discrete_tokens = [f"<i{v}>" for v in range(traj_vocab_size)]
-        num_new_tokens = tokenizer.add_tokens(discrete_tokens)
-        
-        # Store trajectory token indices on tokenizer
-        tokenizer.traj_token_start_idx = tokenizer.convert_tokens_to_ids("<i0>")
-        tokenizer.traj_token_end_idx = tokenizer.convert_tokens_to_ids(f"<i{traj_vocab_size - 1}>")
-        
-        # Add special trajectory tokens
+        # Add special trajectory tokens (history only)
         special_tokens = list(self.TRAJ_TOKEN.values())
         tokenizer.add_tokens(special_tokens, special_tokens=True)
         
@@ -97,7 +85,6 @@ class DFQVLAProcessor(ProcessorMixin):
         }
         
         # Store on processor for easy access
-        self.traj_token_start_idx = tokenizer.traj_token_start_idx
         self.traj_token_ids = tokenizer.traj_token_ids
 
     def _calculate_num_image_tokens(self, image_height, image_width):
@@ -170,40 +157,3 @@ class DFQVLAProcessor(ProcessorMixin):
 
     def decode(self, *args, **kwargs):
         return self.tokenizer.decode(*args, **kwargs)
-
-    def extract_vqvae_indices(self, token_sequence: torch.Tensor) -> list[int]:
-        """Extract VQ-VAE codebook indices from a sequence of tokens.
-        
-        Searches for <|traj_future_start|> and extracts the subsequent 8 trajectory tokens
-        (<iX>), converting them to raw codebook IDs.
-        
-        Args:
-            token_sequence: 1D tensor [L] containing the token IDs.
-            
-        Returns:
-            List of up to 8 integer codebook IDs. Empty list if start token not found.
-        """
-        start_id = self.traj_token_ids["future_start"]
-        end_id = getattr(self.tokenizer, "traj_token_end_idx", None)
-        
-        # Find start token
-        matches = (token_sequence == start_id).nonzero(as_tuple=True)[0]
-        if len(matches) == 0:
-            return []
-            
-        start_pos = matches[-1].item()  # Use the last occurrence if multiple
-        
-        # Extract up to 8 tokens after start
-        extracted_indices = []
-        for i in range(start_pos + 1, min(start_pos + 9, len(token_sequence))):
-            token_id = token_sequence[i].item()
-            # Check if it's a trajectory token
-            if getattr(self, "traj_token_start_idx", None) is not None:
-                if self.traj_token_start_idx <= token_id <= self.traj_token_start_idx + self.traj_vocab_size - 1:
-                    codebook_id = token_id - self.traj_token_start_idx
-                    extracted_indices.append(codebook_id)
-                else:
-                    # Stopped seeing trajectory tokens prematurely
-                    break
-                    
-        return extracted_indices
