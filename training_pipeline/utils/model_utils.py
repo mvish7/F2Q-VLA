@@ -104,6 +104,33 @@ def load_model_and_processor(config) -> Tuple[Any, Any]:
         model.loss_calculator = DFQVLALoss(config.model.loss_weights)
         print(f"Applied loss weights from training config: {config.model.loss_weights}")
     
+    # Solve PyTorch Dynamo/torch.compile tracing errors with TIPSv2Model custom module loading.
+    # Because TIPSv2Model loads its sibling modules (image_encoder, text_encoder) dynamically
+    # without registering them in sys.modules or adding their path to sys.path,
+    # tracing tools (like torch._dynamo when using Liger Kernel or compilation) fail with
+    # ModuleNotFoundError: No module named 'image_encoder'.
+    # We resolve this by adding the vision tower class directory to sys.path and importing/registering them.
+    if hasattr(model, "vision_tower") and model.vision_tower is not None:
+        import sys
+        import os
+        import inspect
+        import importlib
+        
+        vision_tower_module = inspect.getmodule(model.vision_tower.__class__)
+        if vision_tower_module is not None:
+            vision_tower_dir = os.path.dirname(inspect.getfile(vision_tower_module))
+            if vision_tower_dir not in sys.path:
+                sys.path.append(vision_tower_dir)
+                print(f"Added vision tower directory to sys.path: {vision_tower_dir}")
+            
+            for sibling_name in ["image_encoder", "text_encoder"]:
+                if sibling_name not in sys.modules:
+                    try:
+                        sys.modules[sibling_name] = importlib.import_module(sibling_name)
+                        print(f"Successfully registered dynamically-loaded sibling module '{sibling_name}' in sys.modules")
+                    except Exception as e:
+                        print(f"Warning: Failed to import and register dynamically-loaded sibling '{sibling_name}': {e}")
+    
     return model, processor
 
 def apply_freezing(model, config):
