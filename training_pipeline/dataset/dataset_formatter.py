@@ -32,7 +32,7 @@ def format_vla_data(sample: Dict[str, Any], use_flex: bool = False,
         sample: Raw dataset sample. Must contain 'action_reasoning' key.
         use_flex: If True, use single image placeholder for Flex Scene Encoder.
                   If False, use per-image placeholders (16 total).
-        sample_image: Sample image tensor for placeholder.
+        sample_image: Sample image tensor for ***placeholder***.
         include_traj_history: If True, include trajectory history placeholder tokens.
                               Set to False when traj_projector is excluded.
         num_traj_tokens: Number of history trajectory placeholder tokens.
@@ -41,7 +41,7 @@ def format_vla_data(sample: Dict[str, Any], use_flex: bool = False,
         Conversation list for chat template.
     """
     # 1. System Prompt
-    system_msg = "You are an expert self-driving system. Analyze the driving scene and describe the intended driving action."
+    system_msg = "You are an expert self-driving system, responsible for environmental perception and planning of safe driving actions."
     
     # 2. User Prompt Components
     user_content = []
@@ -52,7 +52,8 @@ def format_vla_data(sample: Dict[str, Any], use_flex: bool = False,
     })
     
     # b. Trajectory History Placeholder (only when traj_projector is included)
-    user_text = "Analyze the driving scene and describe the intended driving action."
+    traj_hist_hint = "Your previous trajectory (kinematics of the ego vehicle) is provided in `<|traj_history|>` tokens. That tells you about past driving behavior over 1.6 seconds."
+    user_text = "Analyze the driving scene and the past driving behavior to predict the intended driving actions."
     
     if include_traj_history:
         hist_traj_placeholder = (
@@ -60,7 +61,7 @@ def format_vla_data(sample: Dict[str, Any], use_flex: bool = False,
             f"{TRAJ_TOKEN['history'] * num_traj_tokens}"
             f"{TRAJ_TOKEN['history_end']}"
         )
-        user_text = f"{hist_traj_placeholder}{user_text}"
+        user_text = f"{traj_hist_hint}{hist_traj_placeholder}{user_text}"
     
     user_content.append({
         "type": "text",

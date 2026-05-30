@@ -103,6 +103,9 @@ class DataCollator:
         for sample in examples:
             curr_hist_xyz, curr_hist_rot, curr_fut_xyz, curr_fut_rot = self._extract_traj_data(sample)
             
+            # *** hint about all_images[0][0][0] ***
+            # a placeholder is sent here for apply_chat_template to work below.
+            # image preprocssing is decoupled and considers all images.
             formatted_sample = format_vla_data(
                 sample, use_flex=self.use_flex,
                 sample_image=all_images[0][0][0],
@@ -127,13 +130,14 @@ class DataCollator:
 
         # 3. Tokenize Text & Process Images
         # Processor expects a flat list of images corresponding to <|image_pad|> tokens in sequence
-        padding_free = getattr(self.config, "padding_free", True)
+        # Use dynamic padding (padding=True/longest) and truncation to config.max_len as a guardrail.
         batch = self.processor(
             text=texts, 
             images=all_images, 
             return_tensors="pt", 
-            padding=not padding_free,
-            # padding_free=padding_free,
+            padding=True,
+            truncation=True,
+            max_length=self.config.max_len,
             size={"height": self.config.image_size_height, "width": self.config.image_size_width}
         )
         # Free large CPU intermediates now that the processor has consumed them
