@@ -24,13 +24,19 @@ class DFQVLAProcessorKwargs(ProcessingKwargs, total=False):
 class DFQVLAProcessor(ProcessorMixin):
     attributes = ["image_processor", "tokenizer"]
     image_processor_class = "CLIPImageProcessor"
-    tokenizer_class = ("Qwen2Tokenizer", "Qwen2TokenizerFast")
+    tokenizer_class = "AutoTokenizer"
     
     # Trajectory token constants (history only — future is predicted as text)
     TRAJ_TOKEN = {
         "history": "<|traj_history|>",
         "history_start": "<|traj_history_start|>",
         "history_end": "<|traj_history_end|>",
+    }
+
+    # Action reasoning delimiter tokens
+    ACTION_REASONING_TOKEN = {
+        "start": "<|action_reasoning_start|>",
+        "end": "<|action_reasoning_end|>",
     }
 
     def __init__(self, image_processor, tokenizer, chat_template, vision_config=None,
@@ -66,26 +72,39 @@ class DFQVLAProcessor(ProcessorMixin):
         self.use_flex_scene_encoder = use_flex_scene_encoder
         self.num_scene_tokens = num_scene_tokens
         
-        # Add trajectory history tokens to tokenizer
-        self._add_trajectory_tokens(tokenizer)
+        # Add all custom special tokens to tokenizer
+        self._add_special_tokens(tokenizer)
     
-    def _add_trajectory_tokens(self, tokenizer):
-        """Add trajectory history special tokens to the tokenizer.
+    def _add_special_tokens(self, tokenizer):
+        """Add all custom special tokens to the tokenizer.
         
-        Only adds history-related tokens. Future trajectory is predicted as
-        natural language text and requires no special tokens.
+        Registers: trajectory history tokens, action reasoning delimiters,
+        and vision tokens (for LFM2.5 which lacks them natively).
         """
-        # Add special trajectory tokens (history only)
+        # Collect all special tokens
         special_tokens = list(self.TRAJ_TOKEN.values())
+        special_tokens += list(self.ACTION_REASONING_TOKEN.values())
+        
+        # Vision tokens — add if not already in tokenizer vocab
+        vision_tokens = ["<|image_pad|>", "<|vision_start|>", "<|vision_end|>"]
+        existing_vocab = set(tokenizer.get_vocab().keys())
+        for vt in vision_tokens:
+            if vt not in existing_vocab:
+                special_tokens.append(vt)
+        
         tokenizer.add_tokens(special_tokens, special_tokens=True)
         
-        # Store special token IDs on tokenizer
+        # Store trajectory token IDs
         tokenizer.traj_token_ids = {
             k: tokenizer.convert_tokens_to_ids(v) for k, v in self.TRAJ_TOKEN.items()
         }
-        
-        # Store on processor for easy access
         self.traj_token_ids = tokenizer.traj_token_ids
+        
+        # Store action reasoning token IDs
+        tokenizer.action_reasoning_token_ids = {
+            k: tokenizer.convert_tokens_to_ids(v) for k, v in self.ACTION_REASONING_TOKEN.items()
+        }
+        self.action_reasoning_token_ids = tokenizer.action_reasoning_token_ids
 
     def _calculate_num_image_tokens(self, image_height, image_width):
         """Calculate number of tokens based on image dimensions.

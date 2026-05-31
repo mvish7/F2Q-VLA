@@ -96,6 +96,11 @@ def load_model_and_processor(config) -> Tuple[Any, Any]:
     # so we must resize the model embeddings to accommodate them
     model.resize_token_embeddings(len(processor.tokenizer))
     
+    # Disable LLM KV cache during training to prevent torch.compile graph breaks and recompilations
+    if hasattr(model.config, "text_config"):
+        model.config.text_config.use_cache = False
+    model.config.use_cache = False
+    
     # Sync loss weights from training config to model's loss calculator
     # The model's DFQVLAConfig (loaded from pretrained) may not have loss_weights,
     # so we override from the training pipeline config
@@ -106,30 +111,21 @@ def load_model_and_processor(config) -> Tuple[Any, Any]:
     
     # Solve PyTorch Dynamo/torch.compile tracing errors with TIPSv2Model custom module loading.
     # Because TIPSv2Model loads its sibling modules (image_encoder, text_encoder) dynamically
-    # without registering them in sys.modules or adding their path to sys.path,
-    # tracing tools (like torch._dynamo when using Liger Kernel or compilation) fail with
-    # ModuleNotFoundError: No module named 'image_encoder'.
-    # We resolve this by adding the vision tower class directory to sys.path and importing/registering them.
+    # without registering them in sys.modules, tracing tools (like torch._dynamo when using
+    # Liger Kernel or compilation) fail with ModuleNotFoundError: No module named 'image_encoder'.
+    # We resolve this by retrieving the loaded module objects from the model module's
+    # internal `_sibling_cache` and registering them directly into sys.modules.
     if hasattr(model, "vision_tower") and model.vision_tower is not None:
         import sys
-        import os
         import inspect
-        import importlib
         
         vision_tower_module = inspect.getmodule(model.vision_tower.__class__)
         if vision_tower_module is not None:
-            vision_tower_dir = os.path.dirname(inspect.getfile(vision_tower_module))
-            if vision_tower_dir not in sys.path:
-                sys.path.append(vision_tower_dir)
-                print(f"Added vision tower directory to sys.path: {vision_tower_dir}")
-            
-            for sibling_name in ["image_encoder", "text_encoder"]:
+            sibling_cache = getattr(vision_tower_module, "_sibling_cache", {})
+            for sibling_name, sibling_module in sibling_cache.items():
                 if sibling_name not in sys.modules:
-                    try:
-                        sys.modules[sibling_name] = importlib.import_module(sibling_name)
-                        print(f"Successfully registered dynamically-loaded sibling module '{sibling_name}' in sys.modules")
-                    except Exception as e:
-                        print(f"Warning: Failed to import and register dynamically-loaded sibling '{sibling_name}': {e}")
+                    sys.modules[sibling_name] = sibling_module
+                    print(f"Successfully registered dynamically-loaded sibling module '{sibling_name}' from sibling cache in sys.modules")
     
     return model, processor
 

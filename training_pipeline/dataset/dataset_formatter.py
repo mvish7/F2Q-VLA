@@ -20,6 +20,12 @@ TRAJ_TOKEN = {
     "history_end": "<|traj_history_end|>",
 }
 
+# Action reasoning delimiter tokens
+ACTION_REASONING_TOKEN = {
+    "start": "<|action_reasoning_start|>",
+    "end": "<|action_reasoning_end|>",
+}
+
 def format_vla_data(sample: Dict[str, Any], use_flex: bool = False,
                     sample_image: torch.Tensor = None, include_traj_history: bool = True,
                     num_traj_tokens: int = 16) -> list[Dict[str, Any]]:
@@ -52,8 +58,9 @@ def format_vla_data(sample: Dict[str, Any], use_flex: bool = False,
     })
     
     # b. Trajectory History Placeholder (only when traj_projector is included)
-    traj_hist_hint = "Your previous trajectory (kinematics of the ego vehicle) is provided in `<|traj_history|>` tokens. That tells you about past driving behavior over 1.6 seconds."
-    user_text = "Analyze the driving scene and the past driving behavior to predict the intended driving actions."
+    traj_hist_hint = "Your previous trajectory (x, y, z coordinates and yaw angle) is provided in next 16 tokens. That tells you about past driving behavior over 1.6 seconds."
+    user_text_w_traj = "Analyze the scene and past driving behavior to predict intended driving actions."
+    user_text_wo_traj = "Analyze the scene to predict intended driving actions."
     
     if include_traj_history:
         hist_traj_placeholder = (
@@ -61,15 +68,22 @@ def format_vla_data(sample: Dict[str, Any], use_flex: bool = False,
             f"{TRAJ_TOKEN['history'] * num_traj_tokens}"
             f"{TRAJ_TOKEN['history_end']}"
         )
-        user_text = f"{traj_hist_hint}{hist_traj_placeholder}{user_text}"
+        user_text = f"{traj_hist_hint}{hist_traj_placeholder}{user_text_w_traj}"
+    else:
+        user_text = user_text_wo_traj
     
     user_content.append({
         "type": "text",
         "text": user_text
     })
 
-    # 3. Assistant Target — action reasoning text from dataset
-    action_reasoning = sample.get("action_reasoning", "")
+    # 3. Assistant Target — action reasoning text wrapped with delimiters
+    action_reasoning_raw = sample.get("action_reasoning", "")
+    action_reasoning = (
+        f"{ACTION_REASONING_TOKEN['start']}"
+        f"{action_reasoning_raw}"
+        f"{ACTION_REASONING_TOKEN['end']}"
+    )
     
     return [
         {

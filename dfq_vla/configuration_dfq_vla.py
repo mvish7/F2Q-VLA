@@ -1,6 +1,6 @@
 from transformers import AutoConfig
 from transformers.configuration_utils import PretrainedConfig
-from transformers import Qwen3Config
+from transformers import Lfm2Config
 
 
 VISION_MODEL_ID = "google/tipsv2-b14"
@@ -8,7 +8,7 @@ VISION_MODEL_ID = "google/tipsv2-b14"
 
 class DFQVLAConfig(PretrainedConfig):
     model_type = "dfq_vla"
-    sub_configs = {"text_config": Qwen3Config}
+    sub_configs = {"text_config": Lfm2Config}
     
     def __init__(
             self,
@@ -16,16 +16,17 @@ class DFQVLAConfig(PretrainedConfig):
             text_config=None,
             projector_hidden_act="gelu",
             ignore_index=-100,
-            # carried over from qwen3_vl
-            image_token_id=151655,
-            # video_token_id=151656,
-            vision_start_token_id=151652,
-            vision_end_token_id=151653,
+            image_token_id=None,          # Set dynamically after tokenizer init
+            # video_token_id=None,
+            vision_start_token_id=None,
+            vision_end_token_id=None,
             tie_word_embeddings=True,
             # Trajectory history encoding config
             tokens_per_history_traj: int = 16,  # 16 waypoints, 1 embedding each
             traj_token_ids: dict = None,  # Mapping for special tokens
             traj_input_dim: int = 5,  # Per-waypoint feature dim (xyz + yaw)
+            # Action reasoning delimiter token IDs
+            action_reasoning_token_ids: dict = None,
             # Flex Scene Encoder config
             use_flex_scene_encoder: bool = True,  # Enable Flex encoder
             num_cameras: int = 4,  # Number of camera views
@@ -60,9 +61,9 @@ class DFQVLAConfig(PretrainedConfig):
             self.vision_config = vision_config
 
         if text_config is None:
-            self.text_config = AutoConfig.from_pretrained("Qwen/Qwen3-0.6B")
+            self.text_config = AutoConfig.from_pretrained("LiquidAI/LFM2.5-350M")
         elif isinstance(text_config, dict):
-            self.text_config = Qwen3Config(**text_config)
+            self.text_config = Lfm2Config(**text_config)
         else:
             self.text_config = text_config
 
@@ -79,6 +80,7 @@ class DFQVLAConfig(PretrainedConfig):
         self.tokens_per_history_traj = tokens_per_history_traj
         self.traj_token_ids = traj_token_ids
         self.traj_input_dim = traj_input_dim
+        self.action_reasoning_token_ids = action_reasoning_token_ids
         
         # Flex Scene Encoder config
         self.use_flex_scene_encoder = use_flex_scene_encoder

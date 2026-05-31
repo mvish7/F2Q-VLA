@@ -124,7 +124,7 @@ class DataCollator:
         # 1. Format text using the formatter
         # Apply chat template
         texts = [
-            self.processor.apply_chat_template(conv, tokenize=False) 
+            self.processor.apply_chat_template(conv, tokenize=False)
             for conv in formatted_examples
         ]
 
@@ -132,13 +132,13 @@ class DataCollator:
         # Processor expects a flat list of images corresponding to <|image_pad|> tokens in sequence
         # Use dynamic padding (padding=True/longest) and truncation to config.max_len as a guardrail.
         batch = self.processor(
-            text=texts, 
-            images=all_images, 
-            return_tensors="pt", 
+            text=texts,
+            images=all_images,
+            return_tensors="pt",
             padding=True,
             truncation=True,
             max_length=self.config.max_len,
-            size={"height": self.config.image_size_height, "width": self.config.image_size_width}
+            images_kwargs={"size": {"height": self.config.image_size_height, "width": self.config.image_size_width}},
         )
         # Free large CPU intermediates now that the processor has consumed them
         del all_images, texts, formatted_examples
@@ -154,7 +154,7 @@ class DataCollator:
             if len(positions) > 0:
                 # Mask everything up to and including "<|im_start|>assistant\n"
                 labels[i, : positions[-1].item() + self._assistant_header_len] = -100
-        
+
         # Mask pad tokens (right-padding)
         labels[labels == self.processor.tokenizer.pad_token_id] = -100
         

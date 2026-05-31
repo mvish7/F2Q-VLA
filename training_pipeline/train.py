@@ -4,6 +4,10 @@ from pathlib import Path
 import torch
 from peft import PeftModel
 
+# Configure PyTorch Dynamo to capture scalar outputs (e.g. Tensor.item() in flash attention kwargs)
+# to prevent graph breaks during training.
+torch._dynamo.config.capture_scalar_outputs = True
+
 from training_pipeline.configs import load_config, get_training_args
 from training_pipeline.utils import load_model_and_processor, apply_freezing, setup_lora, print_model_parameters
 from training_pipeline.dataset import DatasetLoader

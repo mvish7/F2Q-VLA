@@ -22,7 +22,7 @@ class DatasetLoader:
     def load_dataset(self) -> tuple[list[dict], list[dict]]:
         """Load and process the dataset."""
         dataset = load_from_disk(self.config.dataset_path)
-        dataset = dataset.select(range(100))
+        # dataset = dataset.select(range(100))
 
         # Expand into list of dicts (can't use Dataset.map because camera
         # objects are not Arrow-serializable)

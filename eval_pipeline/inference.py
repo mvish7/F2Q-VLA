@@ -158,7 +158,23 @@ def generate_action_reasoning(
 
     generated_ids = gen_output.sequences  # [B, generated_len]
 
-    # Decode generated tokens to text
-    generated_texts = processor.batch_decode(generated_ids, skip_special_tokens=True)
+    # Decode generated tokens (keep special tokens for delimiter parsing)
+    generated_texts = processor.batch_decode(generated_ids, skip_special_tokens=False)
 
-    return generated_texts
+    # Extract action reasoning from between delimiters
+    AR_START = "<|action_reasoning_start|>"
+    AR_END = "<|action_reasoning_end|>"
+    parsed_texts = []
+    for text in generated_texts:
+        if AR_START in text and AR_END in text:
+            parsed_texts.append(text.split(AR_START)[1].split(AR_END)[0].strip())
+        else:
+            # Fallback: strip all special tokens
+            parsed_texts.append(
+                processor.batch_decode(
+                    processor.tokenizer.encode(text, add_special_tokens=False, return_tensors="pt"),
+                    skip_special_tokens=True,
+                )[0].strip()
+            )
+
+    return parsed_texts

@@ -82,11 +82,14 @@ class DFQVLAForConditionalGeneration(DFQVLAPretrainedModel, GenerationMixin, Tra
         super().__init__(config)
         self.config = config
 
-        # 1. Load Vision Encoder (DINOv3)
-        # We use from_config to initialize empty structure, weights loaded later
+        # 1. Load Vision Encoder (TIPSv2 — vision branch only)
+        # TIPSv2 is a dual-encoder (vision + text); we only need the vision side.
+        # Setting text_encoder = None deregisters its params from the module tree.
         self.vision_tower = AutoModel.from_config(config.vision_config, trust_remote_code=True)
+        if hasattr(self.vision_tower, "text_encoder"):
+            self.vision_tower.text_encoder = None
 
-        # 2. Load LLM (Qwen3)
+        # 2. Load LLM (LFM2.5)
         self.language_model = AutoModel.from_config(config.text_config)
 
         # 3. Projector (3072 -> 1024)
@@ -191,14 +194,14 @@ class DFQVLAForConditionalGeneration(DFQVLAPretrainedModel, GenerationMixin, Tra
             # DINOv3 forward pass - returns last_hidden_state (B*num_images, seq_len, hidden)
             # Use embedding layer dtype to ensure compatibility with QLoRA/mixed precision
             target_dtype = self.get_input_embeddings().weight.dtype
-            vision_outputs = self.vision_tower(pixel_values.to(target_dtype), output_hidden_states=True)
-            image_embeds = vision_outputs.last_hidden_state
+            vision_outputs = self.vision_tower(pixel_values.to(target_dtype))
+            image_embeds = vision_outputs.image_features.patch_tokens
             
-            # Strip CLS + register tokens, keep only patch tokens
-            # DINOv3 output layout: [CLS, reg_0, ..., reg_N, patch_0, ..., patch_P]
-            num_register = getattr(self.config.vision_config, "num_register_tokens", 0)
-            num_prefix = 1 + num_register  # 1 for CLS
-            image_embeds = image_embeds[:, num_prefix:, :]
+            # # Strip CLS + register tokens, keep only patch tokens
+            # # DINOv3 output layout: [CLS, reg_0, ..., reg_N, patch_0, ..., patch_P]
+            # num_register = getattr(self.config.vision_config, "num_register_tokens", 0)
+            # num_prefix = 1 + num_register  # 1 for CLS
+            # image_embeds = image_embeds[:, num_prefix:, :]
             
             # 2. Flex Scene Encoding (if enabled)
             if self.flex_scene_encoder is not None and camera_ids is not None:
@@ -296,9 +299,18 @@ class DFQVLAForConditionalGeneration(DFQVLAPretrainedModel, GenerationMixin, Tra
             **kwargs,
         )
 
-        if cache_position[0] != 0:
+        # During autoregressive decoding (past_key_values is populated), the model only
+        # receives the single new token — no image placeholder tokens exist in input_ids.
+        # Passing pixel_values here would cause a features/tokens mismatch in get_placeholder_mask.
+        # Only process images during the prefill step (no past_key_values yet).
+        is_prefill = past_key_values is None
+        if not is_prefill:
             model_inputs["pixel_values"] = None
             model_inputs["pixel_values_videos"] = None
+            # Trajectory placeholder tokens only exist in the prefill input_ids.
+            # Skip traj fusion during decode steps.
+            model_inputs.pop("ego_history_xyz", None)
+            model_inputs.pop("ego_history_rot", None)
 
         return model_inputs
 
