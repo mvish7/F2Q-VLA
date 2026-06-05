@@ -39,6 +39,13 @@ class DFQVLAProcessor(ProcessorMixin):
         "end": "<|action_reasoning_end|>",
     }
 
+    # Action head tokens (for learned action embeddings)
+    ACTION_TOKEN = {
+        "start": "<|action_start|>",
+        "end": "<|action_end|>",
+        "action": "<|action|>",
+    }
+
     def __init__(self, image_processor, tokenizer, chat_template, vision_config=None,
                  use_flex_scene_encoder=False, num_scene_tokens=512, **kwargs):
         super().__init__(image_processor, tokenizer, chat_template=chat_template)
@@ -84,6 +91,7 @@ class DFQVLAProcessor(ProcessorMixin):
         # Collect all special tokens
         special_tokens = list(self.TRAJ_TOKEN.values())
         special_tokens += list(self.ACTION_REASONING_TOKEN.values())
+        special_tokens += list(self.ACTION_TOKEN.values())
         
         # Vision tokens — add if not already in tokenizer vocab
         vision_tokens = ["<|image_pad|>", "<|vision_start|>", "<|vision_end|>"]
@@ -105,6 +113,12 @@ class DFQVLAProcessor(ProcessorMixin):
             k: tokenizer.convert_tokens_to_ids(v) for k, v in self.ACTION_REASONING_TOKEN.items()
         }
         self.action_reasoning_token_ids = tokenizer.action_reasoning_token_ids
+        
+        # Store action head token IDs
+        tokenizer.action_token_ids = {
+            k: tokenizer.convert_tokens_to_ids(v) for k, v in self.ACTION_TOKEN.items()
+        }
+        self.action_token_ids = tokenizer.action_token_ids
 
     def _calculate_num_image_tokens(self, image_height, image_width):
         """Calculate number of tokens based on image dimensions.

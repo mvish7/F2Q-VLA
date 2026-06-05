@@ -55,6 +55,8 @@ class DFQVLAOutputWithPast(ModelOutput):
     hidden_states: Optional[tuple[torch.FloatTensor]] = None
     attentions: Optional[tuple[torch.FloatTensor]] = None
     rope_deltas: Optional[torch.LongTensor] = None
+    predicted_waypoints: Optional[torch.FloatTensor] = None
+    trajectory_loss: Optional[torch.FloatTensor] = None
 
 
 class DFQVLAPretrainedModel(PreTrainedModel):
@@ -107,7 +109,10 @@ class DFQVLAForConditionalGeneration(DFQVLAPretrainedModel, GenerationMixin, Tra
         # 5. Initialize Flex Scene Encoder (optional)
         self._initialize_flex_scene_encoder(config)
 
-        # 6. Tie weights if necessary (standard HF practice)
+        # 6. Initialize Action Head (optional, Stage 3 only)
+        self._initialize_action_head(config)
+
+        # 7. Tie weights if necessary (standard HF practice)
         self.post_init()
     
     def _initialize_traj_projector(self, config):
@@ -124,6 +129,21 @@ class DFQVLAForConditionalGeneration(DFQVLAPretrainedModel, GenerationMixin, Tra
             self.flex_scene_encoder = create_flex_scene_encoder(config)
         else:
             self.flex_scene_encoder = None
+    
+    def _initialize_action_head(self, config):
+        """Initialize action head and learned action tokens (Stage 3 only)."""
+        if getattr(config, 'include_action_head', False):
+            from dfq_vla.action_head import LearnedActionTokens, ActionHead, ActionHeadConfig
+            action_cfg = ActionHeadConfig(
+                D_LLM=config.text_config.hidden_size,
+                D_FLEX=config.vision_hidden_size,
+                N_ACTION_TOKENS=getattr(config, 'n_action_tokens', 16),
+            )
+            self.learned_action_tokens = LearnedActionTokens(action_cfg)
+            self.action_head = ActionHead(action_cfg)
+        else:
+            self.learned_action_tokens = None
+            self.action_head = None
 
     def get_input_embeddings(self):
         return self.language_model.get_input_embeddings()
@@ -190,6 +210,7 @@ class DFQVLAForConditionalGeneration(DFQVLAPretrainedModel, GenerationMixin, Tra
             inputs_embeds = self.get_input_embeddings()(input_ids)
 
         # 1. Extract Image Features
+        flex_scene_emb = None  # Stash raw Flex output for action head
         if pixel_values is not None:
             # DINOv3 forward pass - returns last_hidden_state (B*num_images, seq_len, hidden)
             # Use embedding layer dtype to ensure compatibility with QLoRA/mixed precision
@@ -220,6 +241,10 @@ class DFQVLAForConditionalGeneration(DFQVLAPretrainedModel, GenerationMixin, Tra
                     timestamp_ids.to(image_embeds.device)
                 )
 
+            # Stash raw Flex output (768-dim) for action head BEFORE projection
+            if self.action_head is not None:
+                flex_scene_emb = image_embeds.clone()
+
             # Project to LLM space
             image_embeds = self.projector(image_embeds)
 
@@ -241,6 +266,19 @@ class DFQVLAForConditionalGeneration(DFQVLAPretrainedModel, GenerationMixin, Tra
                     ego_history_xyz=ego_history_xyz,
                     ego_history_rot=ego_history_rot,
                 )
+
+        # 2c. Fuse Learned Action Token Embeddings (only when action head is present)
+        if self.action_head is not None and input_ids is not None:
+            action_token_id = self.config.action_token_ids.get("action") if self.config.action_token_ids else None
+            if action_token_id is not None:
+                action_mask = input_ids == action_token_id
+                if action_mask.any():
+                    batch_size = input_ids.shape[0]
+                    action_embeds = self.learned_action_tokens(batch_size)
+                    action_mask_expanded = action_mask.unsqueeze(-1).expand_as(inputs_embeds)
+                    inputs_embeds = inputs_embeds.masked_scatter(
+                        action_mask_expanded, action_embeds.to(inputs_embeds.dtype)
+                    )
 
         # 3. Pass to LLM
         outputs = self.language_model(
@@ -266,12 +304,42 @@ class DFQVLAForConditionalGeneration(DFQVLAPretrainedModel, GenerationMixin, Tra
         if labels is not None:
             loss = self.loss_function(logits=logits, labels=labels, vocab_size=self.config.text_config.vocab_size)
 
+        # 4. Action Head: extract hidden states and predict trajectory (gated)
+        predicted_waypoints = None
+        trajectory_loss = None
+        if self.action_head is not None and input_ids is not None and flex_scene_emb is not None:
+            action_token_id = self.config.action_token_ids.get("action") if self.config.action_token_ids else None
+            if action_token_id is not None:
+                action_mask = input_ids == action_token_id  # (B, L)
+                if action_mask.any():
+                    # Extract hidden states at action token positions
+                    # Each sample has N_ACTION_TOKENS consecutive <|action|> tokens
+                    n_act = self.config.n_action_tokens
+                    action_hidden_list = []
+                    for i in range(input_ids.shape[0]):
+                        positions = (action_mask[i]).nonzero(as_tuple=True)[0]
+                        action_hidden_list.append(hidden_states[i, positions[:n_act], :])
+                    action_hidden = torch.stack(action_hidden_list)  # (B, 16, D_LLM)
+                    
+                    # Action head forward
+                    predicted_waypoints = self.action_head(action_hidden, flex_scene_emb)
+                    
+                    # Compute trajectory loss (only during training with GT available)
+                    ego_future_xyz = kwargs.get("ego_future_xyz")
+                    ego_future_rot = kwargs.get("ego_future_rot")
+                    if ego_future_xyz is not None and ego_future_rot is not None:
+                        trajectory_loss = self.action_head.compute_loss(
+                            predicted_waypoints, ego_future_xyz, ego_future_rot,
+                        )
+
         return DFQVLAOutputWithPast(
             loss=loss,
             logits=logits,
             past_key_values=outputs.past_key_values,
             hidden_states=outputs.hidden_states if output_hidden_states else None,
             attentions=outputs.attentions if output_attentions else None,
+            predicted_waypoints=predicted_waypoints,
+            trajectory_loss=trajectory_loss,
         )
 
     # Required for generation (model.generate)
